@@ -25,3 +25,8 @@ A new - experimental - Fanuc robot driver for ROS-Industrial.
 ## Running
 
 Start the `ROS` TP program.
+
+
+## License
+
+Unless stated otherwise, all code under the Apache 2.0 license.
