@@ -1,0 +1,22 @@
+{
+  "manver" : "1",
+  "project" : "fanuc_driver_exp",
+  "description" : "Experimental Fanuc ROS-I driver",
+  "version" : "0.1.0",
+  "license" : "Apache 2.0",
+  "author" : "G.A. vd. Hoorn",
+  "source" : [
+    "librosfanuc.kl",
+    "libssock.kl",
+    "ros_state.kl",
+    "ros_traj.kl"
+  ],
+  "includes" : [
+    "include"
+  ],
+  "depends" : [
+    "libindlog",
+    "libsimplemsg",
+    "libstdex"
+  ]
+}

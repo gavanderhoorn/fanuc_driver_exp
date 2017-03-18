@@ -1,0 +1,152 @@
+
+-- Copyright (c) 2017, TU Delft Robotics Institute
+--
+-- Licensed under the Apache License, Version 2.0 (the "License");
+-- you may not use this file except in compliance with the License.
+-- You may obtain a copy of the License at
+--
+--     http://www.apache.org/licenses/LICENSE-2.0
+--
+-- Unless required by applicable law or agreed to in writing, software
+-- distributed under the License is distributed on an "AS IS" BASIS,
+-- WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+-- See the License for the specific language governing permissions and
+-- limitations under the License.
+
+
+PROGRAM librosfanuc
+--------------------------------------------------------------------------------
+-- 
+-- librosfanuc implementation.
+--
+-- Utility functions to convert from and to ROS and Fanuc data structures
+-- and types.
+-- 
+-- author: G.A. vd. Hoorn (TU Delft Robotics Institute)
+-- 
+--------------------------------------------------------------------------------
+%ALPHABETIZE
+%COMMENT = 'ROS//r0b'
+%NOBUSYLAMP
+%NOLOCKGROUP
+%NOPAUSE = COMMAND + TPENABLE + ERROR
+
+
+
+
+--------------------------------------------------------------------------------
+-- 
+-- local types & constants
+-- 
+--------------------------------------------------------------------------------
+
+
+
+
+--------------------------------------------------------------------------------
+-- 
+-- local routine prototypes
+-- 
+--------------------------------------------------------------------------------
+%INCLUDE rosfanuc\rosfanuc.klh
+
+
+
+
+--------------------------------------------------------------------------------
+-- 
+-- Empty body
+-- 
+--------------------------------------------------------------------------------
+BEGIN
+END librosfanuc
+
+
+
+
+ROUTINE arr_rad2deg
+VAR
+	i__          : INTEGER
+BEGIN
+	FOR i__ = 1 TO len DO
+		a[i__] = RAD_2_DEG * a[i__]
+	ENDFOR
+END arr_rad2deg
+
+
+
+
+ROUTINE arr_deg2rad
+VAR
+	i__          : INTEGER
+BEGIN
+	FOR i__ = 1 TO len DO
+		a[i__] = DEG_2_RAD * a[i__]
+	ENDFOR
+END arr_deg2rad
+
+
+
+
+ROUTINE jpos_to_jdta
+CONST
+	JGROUP       = 1
+VAR
+	stat__       : INTEGER
+	i__          : INTEGER
+BEGIN
+	stat__ = 0
+
+	-- TODO: support multiple groups
+	-- TODO: check 'len(joint_data) == 10'
+	-- TODO: use GET_VAR(..) and cache group / axis info
+
+	CNV_JPOS_REL(jpos, joint_data, stat__)
+	IF (stat__ <> 0) THEN RETURN (-stat__); ENDIF
+
+	FOR i__ = 1 TO ARRAY_LEN(joint_data) DO
+		IF ($SCR_GRP[JGROUP].$ROTARY_AXS[i__] = TRUE) THEN
+			-- convert degrees to radians
+			joint_data[i__] = joint_data[i__] * DEG_2_RAD
+
+		ELSE
+			-- convert mm to meters
+			joint_data[i__] = joint_data[i__] / 1e3
+		ENDIF
+	ENDFOR
+
+	RETURN (stat__)
+END jpos_to_jdta
+
+
+
+
+ROUTINE jdta_to_jpos
+CONST
+	JGROUP       = 1
+VAR
+	stat__       : INTEGER
+	i__          : INTEGER
+BEGIN
+	stat__ = 0
+
+	-- TODO: support multiple groups
+	-- TODO: check 'len(joint_data) == 10'
+	-- TODO: use GET_VAR(..) and cache group / axis info
+
+	FOR i__ = 1 TO ARRAY_LEN(joint_data) DO
+		IF ($SCR_GRP[JGROUP].$ROTARY_AXS[i__] = TRUE) THEN
+			-- convert radians to degrees
+			joint_data[i__] = joint_data[i__] * RAD_2_DEG
+
+		ELSE
+			-- convert meters to mm
+			joint_data[i__] = joint_data[i__] * 1e3
+		ENDIF
+	ENDFOR
+
+	CNV_REL_JPOS(joint_data, jpos, stat__)
+	IF (stat__ <> 0) THEN RETURN (-stat__); ENDIF
+
+	RETURN (stat__)
+END jdta_to_jpos

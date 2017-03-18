@@ -1,0 +1,712 @@
+
+-- Copyright (c) 2017, TU Delft Robotics Institute
+--
+-- Licensed under the Apache License, Version 2.0 (the "License");
+-- you may not use this file except in compliance with the License.
+-- You may obtain a copy of the License at
+--
+--     http://www.apache.org/licenses/LICENSE-2.0
+--
+-- Unless required by applicable law or agreed to in writing, software
+-- distributed under the License is distributed on an "AS IS" BASIS,
+-- WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+-- See the License for the specific language governing permissions and
+-- limitations under the License.
+
+
+PROGRAM ros_traj
+--------------------------------------------------------------------------------
+--
+-- ROS-Industrial joint trajectory relay.
+--
+-- Currently only supports joint trajectory point streaming.
+--
+--
+-- Assumptions:
+--   - User Socket Messaging (USM) is supported by robot
+--   - There is only 1 motion group
+--   - The TP program 'ros_movesm' exists on the robot
+--
+--
+-- Configuration defaults:
+--   - TAG 'S4' used for USM
+--   - Relay TCP port ROS-I default (11000)
+--   - Position registers 1 & 2 are available
+--   - Integer registers 1, 2, 3, 4 & 5 are available
+--   - Flags 1 & 2 are available
+--   - Motion termination is at CNT 50%
+--
+--
+-- author: G.A. vd. Hoorn (TU Delft Robotics Institute)
+--
+--------------------------------------------------------------------------------
+%ALPHABETIZE
+%COMMENT = 'ROS//r0b'
+%NOLOCKGROUP
+%NOPAUSE = COMMAND + TPENABLE + ERROR
+
+
+
+
+--------------------------------------------------------------------------------
+--
+-- remote types & constants
+--
+--------------------------------------------------------------------------------
+%INCLUDE simplemsg\msgs\sm000A.klt
+%INCLUDE simplemsg\msgs\sm000B.klt
+%INCLUDE simplemsg\simplemsg.klt
+%INCLUDE libssock.klt
+
+
+
+
+--------------------------------------------------------------------------------
+--
+-- local types & constants
+--
+--------------------------------------------------------------------------------
+TYPE
+	cfg_t = STRUCTURE
+		checked      : BOOLEAN  -- user flagged: config checked
+		f_msm_drdy   : INTEGER  -- flag used for 'motion sm data ready' signal
+		f_msm_rdy    : INTEGER  -- flag used for 'motion sm ready' signal
+		loop_hz      : INTEGER  -- main loop update rate (in Hz)
+		move_cnt     : INTEGER  -- CNT to use for each motion instruction
+		pr_move      : INTEGER  -- pos reg to use for next traj pt
+		r_move_cnt   : INTEGER  -- int reg to store traj segment CNT in (%)
+		r_skip_sig   : INTEGER  -- int reg monitored by SKIP CONDITION in TP
+		r_tseg_vel   : INTEGER  -- int reg to store traj segment joint velocity in (%)
+		s_tag_nr     : INTEGER  -- server TAG number to use
+		s_tcp_nr     : INTEGER  -- TCP port to listen on
+		trjpt_buf_sz : INTEGER  -- nr of traj pts to buffer
+		um_clear     : BOOLEAN  -- clear user menu on start
+	ENDSTRUCTURE
+
+
+CONST
+	LOG_PFIX     = 'RTRJ '
+
+	COND_AH      =  736  -- ABORT handler id (randomly chosen, but less
+	                     -- likely to clash than simply '1')
+
+	CFG_OK       =    0  -- config ok
+	CFG_NOTDONE  =   -1  -- configuration not checked: user action required
+
+	EWOULDBLOCK  =   282 -- shadow of EAGAIN
+	FILE_ILL_PRM =  2032 -- FILE-032 Illegal parameter
+	HOST_CTAG_ER = 67144 -- HOST-144 Comm Tag error
+	SEV_ABORT    =    2  -- ABORT severity
+
+	RACCEPT_DLAY = 1000  -- 'return to sock_accept' delay
+
+
+	-- Configuration defaults
+	TAG_NR       =    4  -- Server tag
+	TCP_PORT     = SM_SP_MOTION
+
+	MOVE_CNT     =   50  -- CNT value to use with ros_movesm
+
+	LOOP_HZ      =  125  -- Main loop freq (Hz).On 12ms ITP controllers
+	                     -- ROS_TRAJ will run at 83 Hz.
+	                     -- See issue 203 on GH for some discussion.
+
+	MOT_SKIP_SIG =    1  -- value to write to SKIP CONDITION register to signal
+	                     -- motion abort to TP side
+
+	BUF_THRSHLD  =    6  -- desired nr of TRAJ_PTs in buffer
+
+
+	-- ros_movesm interface defaults:
+	PR_MOVE_IDX  =    1  -- position register for current point
+
+	R_TSEGV_IDX  =    1  -- integer register: traj segment length (in ms)
+	R_MOVE_CNT   =    2  -- integer register: motion termination (in %)
+	R_SKPSIG_IDX =    5  -- integer register: SKIP CONDITION register
+
+	RI_MSM_RDY   =    1  -- ready signal flag
+	RI_MSM_DRDY  =    2  -- data ready signal flag
+
+
+
+
+--------------------------------------------------------------------------------
+--
+-- local variables
+--
+--------------------------------------------------------------------------------
+VAR
+	cfg_         IN SHADOW : cfg_t          -- configuration
+
+	stat_                  : INTEGER
+	sleep_time_            : INTEGER
+	shutdwn_req_           : BOOLEAN        -- program abort requested status
+
+	sock_                  : ssock_t        -- server socket instance
+	sock_fd_               : FILE           -- file descriptor has to be declared here
+
+	msg000B_               : sm000B_t
+	sm000B_lst_            : sm000B_lst_t   -- list of JOINT_TRAJ_PT msgs
+
+
+
+
+--------------------------------------------------------------------------------
+--
+-- remote routine prototypes
+--
+--------------------------------------------------------------------------------
+%INCLUDE rosfanuc\rosfanuc.klh
+%INCLUDE simplemsg\msgs\sm000B.klh
+%INCLUDE simplemsg\sm_hdr.klh
+%INCLUDE indlog\indlog.klh
+%INCLUDE libssock.klh
+
+
+
+
+--------------------------------------------------------------------------------
+--
+-- local routine prototypes
+--
+--------------------------------------------------------------------------------
+ROUTINE hndl_client_(fd : FILE; cfg : cfg_t) : INTEGER FROM ros_traj
+ROUTINE has_msgs_(len : INTEGER; fd : FILE) : INTEGER FROM ros_traj
+ROUTINE read_sm000B_(fd : FILE; msg : sm000B_t) : INTEGER FROM ros_traj
+ROUTINE ack_svcreq_(seq : INTEGER; fd : FILE) : INTEGER FROM ros_traj
+ROUTINE nack_svcreq_(seq : INTEGER; fd : FILE) : INTEGER FROM ros_traj
+
+ROUTINE check_cfg_(cfg : cfg_t) : INTEGER FROM ros_traj
+ROUTINE install_ah_ FROM ros_traj
+ROUTINE remove_ah_ FROM ros_traj
+
+ROUTINE push_pt_(msg : sm000B_t; no_block : BOOLEAN; cfg : cfg_t) : INTEGER FROM ros_traj
+ROUTINE cancl_mtion_(cfg : cfg_t) FROM ros_traj
+
+
+
+
+--------------------------------------------------------------------------------
+--
+-- Main program
+--
+--------------------------------------------------------------------------------
+BEGIN
+	-- init program locals
+	stat_        = 0
+	shutdwn_req_ = FALSE
+
+	-- check config
+	stat_ = check_cfg_(cfg_)
+	IF (stat_ <> CFG_OK) THEN
+		log_error_a(LOG_PFIX + 'cfg err:', stat_)
+		log_error(LOG_PFIX + 'check cfg')
+		-- errors with config always force user to log window
+		log_force
+		POST_ERR(FILE_ILL_PRM, '', 0, SEV_ABORT)
+		RETURN
+	ENDIF
+
+
+	-- rest of config
+	sleep_time_ = ROUND(1000.0 / cfg_.loop_hz)
+
+
+	-- initialise ABORT handler
+	install_ah_
+
+
+	-- enable log output
+	IF (cfg_.um_clear) THEN log_clear; ENDIF
+
+
+	-- init server socket
+	stat_ = ssock_ctor(sock_, cfg_.s_tcp_nr , cfg_.s_tag_nr)
+	IF (stat_ <> 0) THEN
+		IF (stat_ = TAG_CONF_ERR) THEN
+			log_error_a(LOG_PFIX + 'cfg err, TAG idx:', cfg_.s_tag_nr)
+		ELSE
+			log_error_a(LOG_PFIX + 'ssock_ctor err:', stat_)
+		ENDIF
+		-- nothing we can do, abort
+		POST_ERR(HOST_CTAG_ER, '', 0, SEV_ABORT)
+	ENDIF
+
+
+	-- make sure socket is closed (don't care about result)
+	stat_ = ssock_dconnf(sock_)
+
+
+	log_info_a(LOG_PFIX + 'buf sz:', cfg_.trjpt_buf_sz)
+	log_info(LOG_PFIX + 'init done')
+
+
+	WHILE (NOT shutdwn_req_) DO
+
+		-- inform user
+		log_info(LOG_PFIX + 'wait client')
+
+		-- we need binary mode (UnFormatted)
+		-- KAREL Reference Manual, MARRC75KR07091E Rev C, sec 7.3.1
+		SET_FILE_ATR(sock_fd_, ATR_UF)
+
+		-- wait for connection
+		stat_ = ssock_accpt2(sock_, sock_fd_)
+		IF (stat_ <> 0) THEN
+			log_error_a(LOG_PFIX + 'sock_accept err:', stat_)
+			-- can't continue
+			shutdwn_req_ = TRUE
+			GOTO lbl_break0
+		ENDIF
+
+		-- inform user
+		log_info(LOG_PFIX + 'connected')
+
+		-- client connected, 'spin-off' connection handler
+		stat_ = hndl_client_(sock_fd_, cfg_)
+
+		-- if there was no error and we were also not requested to shutdown,
+		-- continue listening for clients
+		IF ((stat_ = 0) AND (NOT shutdwn_req_)) THEN GOTO lbl_cont0; ENDIF
+
+		-- in other cases, exit with forced disconnect
+	lbl_break0::
+		stat_ = ssock_dconn2(sock_, sock_fd_)
+
+	lbl_cont0::
+		-- wait for new client
+		log_info(LOG_PFIX + 'disconnected')
+
+		-- always delay returning to accept() a bit, to make sure user can
+		-- escape runaway loops
+		DELAY (RACCEPT_DLAY)
+
+	-- /WHILE (NOT shutdwn_req_)
+	ENDWHILE
+
+
+	-- make sure socket is closed (don t care about result)
+	stat_ = ssock_dconnf(sock_)
+
+	-- disable the ABORT handler
+	remove_ah_
+
+	-- done
+	log_info(LOG_PFIX + 'exit')
+END ros_traj
+
+
+
+
+ROUTINE hndl_client_
+CONST
+	HEAD_OF_LIST = 1
+	NO_BLOCK     = TRUE
+VAR
+	stat__       : INTEGER
+	req_len__    : INTEGER
+	outs_msgs__  : INTEGER
+BEGIN
+	-- init 'thread' locals
+	stat__       = 0
+	outs_msgs__  = 0
+
+
+	-- init msg instance and msg list
+	sm000B_ctor(msg000B_)
+	stat__ = sm000Bl_ctor(sm000B_lst_)
+
+
+	-- calc nr of bytes we need for single msg (include pkt_len here)
+	req_len__ = 4 + sm_hdr_len(msg000B_.hdr) + sm000B_len(msg000B_)
+
+
+	-- service connected client
+	WHILE (NOT shutdwn_req_) DO
+
+		-- check for new msgs
+		stat__ = has_msgs_(req_len__, fd)
+
+		-- anything negative is an error, so exit
+		IF (stat__ < 0) THEN
+			log_error_a(LOG_PFIX + 'has msg err:', stat__)
+			GOTO lbl_break1
+		ENDIF
+
+		-- if we haven't received anything, don't deserialise
+		IF (stat__ = 0) THEN GOTO lbl_cnomsg; ENDIF
+
+		-- deserialise
+		stat__ = read_sm000B_(fd, msg000B_)
+		IF (stat__ <> 0) THEN
+			log_error_a(LOG_PFIX + 'B read err:', stat__)
+			GOTO lbl_break1
+		ENDIF
+
+		-- crude check
+		IF (msg000B_.hdr.msg_type <> SM000B_ID) THEN
+			log_error_a(LOG_PFIX + 'ignore unkn msg:', msg000B_.hdr.msg_type)
+			-- TODO: should we just ignore msgs that we don't know? This could
+			--       be a desync, which we can't recover from.
+			GOTO lbl_break1
+		ENDIF
+
+
+		-- check special sequence nrs: if TRAJ STOP, clear list and abort current motion
+		IF (msg000B_.sequence < 0) THEN
+
+			-- we only support TRAJ_STOP special seq nr
+			SELECT (msg000B_.sequence) OF
+				CASE (SM_SEQ_STPRJ):
+					log_info(LOG_PFIX + 'traj STOP')
+
+					-- stop requested: clear list, request cancel TP motion
+					sm000Bl_cler(sm000B_lst_)
+					cancl_mtion_(cfg)
+
+					stat__ = ack_svcreq_(msg000B_.sequence, fd)
+
+				ELSE:
+					log_warn_a(LOG_PFIX + 'unsupp seq:', msg000B_.sequence)
+					log_warn(LOG_PFIX + 'please report')
+
+					-- NACK this msg, but ros-industrial/industrial_core#118 ..
+					stat__ = nack_svcreq_(msg000B_.sequence, fd)
+			ENDSELECT
+
+			-- failure to send reply is failure of everything, so exit client
+			-- hndlr 'thread'
+			IF (stat__ <> 0) THEN GOTO lbl_break1; ENDIF
+
+
+			-- handled msg with special sequence nr
+			GOTO lbl_cont1
+		ENDIF
+
+
+		-- finally add new traj pt to list
+		sm000Bl_apnd(sm000B_lst_, msg000B_)
+		outs_msgs__ = outs_msgs__ + 1
+
+
+	-- 'continue without a new message'
+	lbl_cnomsg::
+
+		-- if len(buffer) < threshold, request next one (ie: ACK)
+		IF (sm000Bl_size(sm000B_lst_) < cfg.trjpt_buf_sz) AND (outs_msgs__ > 0) THEN
+
+			-- TODO: debug only
+			log_info_a(LOG_PFIX + 'ack:', msg000B_.sequence)
+
+			-- ACK msg we just received
+			stat__ = ack_svcreq_(msg000B_.sequence, fd)
+			outs_msgs__ = outs_msgs__ - 1
+
+			-- failure to send reply is failure of everything, so exit client
+			-- hndlr 'thread'
+			IF (stat__ <> 0) THEN GOTO lbl_break1; ENDIF
+		ENDIF
+
+
+		-- if we don't have any outstanding traj pts, skip the rest
+		IF (sm000Bl_mpty(sm000B_lst_)) THEN GOTO lbl_cont1; ENDIF
+
+
+		-- TODO: check whether we are already at destination. If so: skip
+		--       traj pt
+		--IF (sm000B_lst_[HEAD_OF_LIST].sequence = 0) THEN
+		--	sm000Bl_rmov(sm000B_lst_, HEAD_OF_LIST)
+		--	GOTO lbl_cont1
+		--ENDIF
+
+
+		-- if we have any traj pts in our buffer, try pushing the oldest one
+		-- to TP side, but do so without blocking (we'll try again next iter)
+		stat__ = push_pt_(sm000B_lst_[HEAD_OF_LIST], NO_BLOCK, cfg)
+
+		-- if TP side was busy, try again later
+		-- TODO: add 'nodelay' lbl to skip DELAY
+		IF (-stat__ = EWOULDBLOCK) THEN GOTO lbl_cont1; ENDIF
+
+		-- if there was some error, 'handle' it
+		IF (stat__ <> 0) THEN
+			log_error_a(LOG_PFIX + 'err pt push: ', stat__)
+			GOTO lbl_break1
+		ENDIF
+
+		-- TODO: debug only
+		log_info_a(LOG_PFIX + 'pushed:', sm000B_lst_[HEAD_OF_LIST].sequence)
+
+		-- push successfull, remove
+		sm000Bl_rmov(sm000B_lst_, HEAD_OF_LIST)
+
+
+		-- sleep a little
+	lbl_cont1::
+		DELAY (sleep_time_)
+
+
+	-- /WHILE (NOT shutdwn_req_)
+	ENDWHILE
+
+lbl_break1::
+	log_info(LOG_PFIX + 'hndl_client exit')
+
+	RETURN (-ABS(stat__))
+END hndl_client_
+
+
+
+
+ROUTINE has_msgs_
+VAR
+	stat__       : INTEGER
+	b_avail__    : INTEGER
+BEGIN
+	stat__       = 0
+	b_avail__    = 0
+
+	CLR_IO_STAT(fd)
+	BYTES_AHEAD(fd, b_avail__, stat__)
+	IF (stat__ <> 0) THEN RETURN (-ABS(stat__)); ENDIF
+
+	-- return nr of complete msgs in socket fd buf
+	RETURN (b_avail__ DIV len)
+END has_msgs_
+
+
+
+
+ROUTINE read_sm000B_
+VAR
+	stat__       : INTEGER
+	len__        : INTEGER
+BEGIN
+	stat__ = 0
+	len__  = 0
+
+	READ fd(len__)
+	stat__ = IO_STATUS(fd)
+	IF (stat__ <> 0) THEN GOTO lbl_exitB1; ENDIF
+
+	stat__ = sm_hdr_read(msg.hdr, fd)
+	IF (stat__ <> 0) THEN GOTO lbl_exitB1; ENDIF
+
+	stat__ = sm000B_read(msg, fd)
+	IF (stat__ <> 0) THEN GOTO lbl_exitB1; ENDIF
+
+lbl_exitB1::
+	RETURN (-ABS(stat__))
+END read_sm000B_
+
+
+
+
+--------------------------------------------------------------------------------
+--
+-- Hard-coded minimal service reply.
+--
+--------------------------------------------------------------------------------
+ROUTINE send_reply_(seq : INTEGER; res : INTEGER; fd : FILE) : INTEGER
+VAR
+	stat__       : INTEGER
+CONST
+	LEN          = 56            -- (12 + (4 + (10 * 4)))
+	MSG_TYPE     = SM000A_ID
+	COMM_TYPE    = SM_CT_SVCRPL
+BEGIN
+	-- serialise minimal SM000A
+	WRITE fd(LEN, MSG_TYPE, COMM_TYPE, res, seq,
+		0.0, 0.0, 0.0, 0.0, 0.0,
+		0.0, 0.0, 0.0, 0.0, 0.0,
+		CR)
+	stat__ = IO_STATUS(fd)
+	RETURN (-ABS(stat__))
+END send_reply_
+
+
+
+
+--------------------------------------------------------------------------------
+--
+-- ACK msg.
+--
+-- [in    ]  seq     : sequence number of the msg to ACK
+-- [in    ]  fd      : file descriptor to serialise ACK to
+-- [out   ]          : 0 IFF no error
+--
+--------------------------------------------------------------------------------
+ROUTINE ack_svcreq_
+BEGIN
+	RETURN (send_reply_(seq, SM_RT_SUCC, fd))
+END ack_svcreq_
+
+
+
+
+--------------------------------------------------------------------------------
+--
+-- NACK msg. Something erred.
+--
+-- [in    ]  seq     : sequence number of the msg to NACK
+-- [in    ]  fd      : file descriptor to serialise NACK to
+-- [out   ]          : 0 IFF no error
+--
+--------------------------------------------------------------------------------
+ROUTINE nack_svcreq_
+BEGIN
+	RETURN (send_reply_(seq, SM_RT_FAIL, fd))
+END nack_svcreq_
+
+
+
+
+ROUTINE check_cfg_
+VAR
+	a__ : BOOLEAN
+BEGIN
+	a__ = FALSE
+
+	-- set defaults for any uninitialised entries
+	IF (UNINIT(cfg.checked     )) THEN cfg.checked      = FALSE       ; a__ = TRUE; ENDIF
+	IF (UNINIT(cfg.f_msm_drdy  )) THEN cfg.f_msm_drdy   = RI_MSM_DRDY ; a__ = TRUE; ENDIF
+	IF (UNINIT(cfg.f_msm_rdy   )) THEN cfg.f_msm_rdy    = RI_MSM_RDY  ; a__ = TRUE; ENDIF
+	IF (UNINIT(cfg.loop_hz     )) THEN cfg.loop_hz      = LOOP_HZ     ; a__ = TRUE; ENDIF
+	IF (UNINIT(cfg.move_cnt    )) THEN cfg.move_cnt     = MOVE_CNT    ; a__ = TRUE; ENDIF
+	IF (UNINIT(cfg.pr_move     )) THEN cfg.pr_move      = PR_MOVE_IDX ; a__ = TRUE; ENDIF
+	IF (UNINIT(cfg.r_move_cnt  )) THEN cfg.r_move_cnt   = R_MOVE_CNT  ; a__ = TRUE; ENDIF
+	IF (UNINIT(cfg.r_skip_sig  )) THEN cfg.r_skip_sig   = R_SKPSIG_IDX; a__ = TRUE; ENDIF
+	IF (UNINIT(cfg.r_tseg_vel  )) THEN cfg.r_tseg_vel   = R_TSEGV_IDX ; a__ = TRUE; ENDIF
+	IF (UNINIT(cfg.s_tag_nr    )) THEN cfg.s_tag_nr     = TAG_NR      ; a__ = TRUE; ENDIF
+	IF (UNINIT(cfg.s_tcp_nr    )) THEN cfg.s_tcp_nr     = TCP_PORT    ; a__ = TRUE; ENDIF
+	IF (UNINIT(cfg.trjpt_buf_sz)) THEN cfg.trjpt_buf_sz = BUF_THRSHLD ; a__ = TRUE; ENDIF
+	IF (UNINIT(cfg.um_clear    )) THEN cfg.um_clear     = TRUE        ; a__ = TRUE; ENDIF
+
+	-- make sure user has checked configuration
+	IF ((NOT cfg.checked) OR a__) THEN RETURN (CFG_NOTDONE); ENDIF
+
+	-- all ok
+	RETURN (CFG_OK)
+END check_cfg_
+
+
+
+
+--------------------------------------------------------------------------------
+--
+-- Application handler for ABORT signals.
+--
+--------------------------------------------------------------------------------
+ROUTINE ab_hndlr_
+BEGIN
+	shutdwn_req_ = TRUE
+	CANCEL FILE sock_fd_
+END ab_hndlr_
+
+
+
+
+--------------------------------------------------------------------------------
+--
+-- Installs a condition handler that catches ABORT signals to allow the
+-- application to 'gracefully' exit.
+--
+--------------------------------------------------------------------------------
+ROUTINE install_ah_
+BEGIN
+	CONDITION[COND_AH]: WITH $SCAN_TIME = 256
+		WHEN ABORT DO
+			NOABORT
+			ab_hndlr_
+	ENDCONDITION
+	ENABLE CONDITION[COND_AH]
+END install_ah_
+
+
+
+
+--------------------------------------------------------------------------------
+--
+-- Deregisters the ABORT condition handler.
+--
+--------------------------------------------------------------------------------
+ROUTINE remove_ah_
+BEGIN
+	PURGE CONDITION[COND_AH]
+END remove_ah_
+
+
+
+
+--------------------------------------------------------------------------------
+--
+-- This routine communicates the new joint position to the 'Move SM' TPE 
+-- program using the configured flags, position and integer registers.
+--
+-- NOTE: reachability of the joint position passed in (via 'msg') is not
+--       checked by this routine.
+--
+-- [in    ]  msg   : msg containing new joint position
+-- [in    ]  block : whether this routine should block if TP side is 'busy'
+--                   (ie: has registers locked)
+-- [return]        :    0 IFF no error
+--                     -1 IFF new position not reachable
+--                   < -1 on any other error
+--
+--------------------------------------------------------------------------------
+ROUTINE push_pt_
+VAR
+	stat__       : INTEGER
+	vel_perc__   : INTEGER
+	jpos__       : JOINTPOS
+BEGIN
+	-- if TP has not signalled 'ready' and we can't block, return
+	IF (no_block AND (FLG[cfg.f_msm_rdy] = OFF)) THEN
+		RETURN (-EWOULDBLOCK)
+	ENDIF
+
+	-- map ROS velocity to Fanuc joint vel
+	vel_perc__ = ROUND(msg.velocity * 1e2)
+	IF (vel_perc__ > 100) THEN vel_perc__ = 100; ENDIF
+	IF (vel_perc__ <   1) THEN vel_perc__ =   1; ENDIF
+
+	-- convert ROS traj pt to Fanuc 'joint position'
+	stat__ = jdta_to_jpos(msg.joint_data, jpos__)
+	IF (stat__ <> 0) THEN RETURN (-ABS(stat__)); ENDIF
+
+	-- check again here, as caller could have specified that we are
+	-- allowed to block (if not, then we can only get here if 'rdy'
+	-- is already 'ON' and we will not block here)
+	WAIT FOR (FLG[cfg.f_msm_rdy] = ON)
+
+	-- set target joint pos
+	SET_JPOS_REG(cfg.pr_move, jpos__, stat__)
+	IF (stat__ <> 0) THEN RETURN (-stat__); ENDIF
+
+	-- set traj segment velocity, percentage of max joint vel
+	SET_INT_REG(cfg.r_tseg_vel, vel_perc__, stat__)
+	IF (stat__ <> 0) THEN RETURN (-stat__); ENDIF
+
+	-- set motion termination (from config)
+	SET_INT_REG(cfg.r_move_cnt, cfg.move_cnt, stat__)
+	IF (stat__ <> 0) THEN RETURN (-stat__); ENDIF
+
+	-- signal new pt available
+	FLG[cfg.f_msm_drdy] = ON
+
+	-- NOTE: we don't wait for "FLG[cfg.f_msm_drdy] = OFF" here, as future
+	--       calls to push_pt_(..) will check status of TP side before
+	--       continuing anyway
+
+	-- done
+	RETURN (0)
+END push_pt_
+
+
+
+
+ROUTINE cancl_mtion_
+BEGIN
+	log_info(LOG_PFIX + 'signal traj SKIP')
+	SET_INT_REG(cfg.r_skip_sig, MOT_SKIP_SIG, 0)
+END cancl_mtion_

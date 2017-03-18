@@ -1,0 +1,617 @@
+
+-- Copyright (c) 2017, TU Delft Robotics Institute
+--
+-- Licensed under the Apache License, Version 2.0 (the "License");
+-- you may not use this file except in compliance with the License.
+-- You may obtain a copy of the License at
+--
+--     http://www.apache.org/licenses/LICENSE-2.0
+--
+-- Unless required by applicable law or agreed to in writing, software
+-- distributed under the License is distributed on an "AS IS" BASIS,
+-- WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+-- See the License for the specific language governing permissions and
+-- limitations under the License.
+
+
+PROGRAM ros_state
+--------------------------------------------------------------------------------
+--
+-- ROS-Industrial joint state and robot status publisher.
+--
+-- Currently only supports JOINT_POSITION and ROBOT_STATUS msgs.
+--
+--
+-- Assumptions:
+--   - User Socket Messaging (USM) is supported by robot
+--   - There is only 1 motion group
+--
+--
+-- Configuration defaults:
+--   - TAG 'S3' used for USM
+--   - Relay TCP port ROS-I default (11002)
+--
+--
+-- author: G.A. vd. Hoorn (TU Delft Robotics Institute)
+--
+--------------------------------------------------------------------------------
+%ALPHABETIZE
+%COMMENT = 'ROS//r0b'
+%NOLOCKGROUP
+%NOPAUSE = COMMAND + TPENABLE + ERROR
+
+
+
+
+--------------------------------------------------------------------------------
+--
+-- remote types & constants
+--
+--------------------------------------------------------------------------------
+%INCLUDE simplemsg\msgs\sm000A.klt
+%INCLUDE simplemsg\msgs\sm000D.klt
+%INCLUDE simplemsg\simplemsg.klt
+%INCLUDE libssock.klt
+%INCLUDE klevkeys.kl
+%INCLUDE kliosop.kl
+
+
+
+
+--------------------------------------------------------------------------------
+--
+-- local types & constants
+--
+--------------------------------------------------------------------------------
+TYPE
+	cfg_t = STRUCTURE
+		checked      : BOOLEAN  -- user flagged: config checked
+		loop_hz      : INTEGER  -- main loop update rate (in Hz)
+		s_tag_nr     : INTEGER  -- server TAG number to use
+		s_tcp_nr     : INTEGER  -- TCP port to listen on
+		um_clear     : BOOLEAN  -- clear user menu on start
+	ENDSTRUCTURE
+
+
+CONST
+	LOG_PFIX     = 'RSTA '
+
+	COND_AH      =  186  -- ABORT handler id (randomly chosen, but less
+	                     -- likely to clash than simply '1')
+
+	CFG_OK       =    0  -- config ok
+	CFG_NOTDONE  =   -1  -- configuration not checked: user action required
+
+	FILE_EOF     =  2021 -- FILE-021 End of file
+	FILE_ILL_PRM =  2032 -- FILE-032 Illegal parameter
+	HOST_CTAG_ER = 67144 -- HOST-144 Comm Tag error
+	SEV_ABORT    =    2  -- ABORT severity
+
+	RACCEPT_DLAY = 1000  -- 'return to sock_accept' delay
+
+
+	-- Configuration defaults
+	TAG_NR       =    3  -- Server tag
+	TCP_PORT     = SM_SP_STATE
+
+	LOOP_HZ      =  125  -- Main loop freq (Hz). On 12ms ITP controllers
+	                     -- ROS_STATE will run at 83 Hz.
+	                     -- See issue 203 on GH for some discussion.
+
+
+CONST
+	                     -- '$MOR.$safety_stat', R-J3iC Software Reference Manual, 
+	                     --   MARACSSRF03061E Rev A
+	MFS_EMGOP    =    1  -- E-Stop SOP
+	MFS_EMGTP    =    2  -- E-Stop TP
+	MFS_DEADMAN  =    4  -- TP Deadman
+	MFS_FENCE    =    8  -- Fence Open
+	MFS_ROT      =   16  -- Over Travel
+	MFS_HBK      =   32  -- Hand Broken
+	MFS_EMGEX    =   64  -- External E-Stop
+	MFS_PPABN    =  128  -- ?
+	MFS_BLTBREAK =  256  -- Belt Broken
+	MFS_ENABLE   =  512  -- TP Enable
+	MFS_FALM     = 1024  -- Alarm?
+
+
+
+
+--------------------------------------------------------------------------------
+--
+-- local variables
+--
+--------------------------------------------------------------------------------
+VAR
+	cfg_         IN SHADOW : cfg_t          -- configuration
+
+	stat_                  : INTEGER
+	sleep_time_            : INTEGER
+	shutdwn_req_           : BOOLEAN        -- program abort requested status
+
+	sock_                  : ssock_t        -- server socket instance
+	sock_fd_               : FILE           -- file descriptor has to be declared here
+
+	msg000A_               : sm000A_t
+	msg000D_               : sm000D_t
+
+
+
+
+--------------------------------------------------------------------------------
+--
+-- remote routine prototypes
+--
+--------------------------------------------------------------------------------
+%INCLUDE rosfanuc\rosfanuc.klh
+%INCLUDE simplemsg\msgs\sm000A.klh
+%INCLUDE simplemsg\msgs\sm000D.klh
+%INCLUDE simplemsg\sm_hdr.klh
+%INCLUDE indlog\indlog.klh
+%INCLUDE libssock.klh
+%INCLUDE klrdutil.kl
+
+
+
+
+--------------------------------------------------------------------------------
+--
+-- local routine prototypes
+--
+--------------------------------------------------------------------------------
+ROUTINE hndl_client_(fd : FILE; cfg : cfg_t) : INTEGER FROM ros_state
+
+ROUTINE upd_sm000A_(msg : sm000A_t) : INTEGER FROM ros_state
+ROUTINE upd_sm000D_(msg : sm000D_t) FROM ros_state
+
+ROUTINE writ_sm000A_(msg : sm000A_t; fd : FILE) : INTEGER FROM ros_state
+ROUTINE writ_sm000D_(msg : sm000D_t; fd : FILE) : INTEGER FROM ros_state
+
+ROUTINE check_cfg_(cfg : cfg_t) : INTEGER FROM ros_state
+ROUTINE install_ah_ FROM ros_state
+ROUTINE remove_ah_ FROM ros_state
+
+
+
+
+--------------------------------------------------------------------------------
+--
+-- Main program
+--
+--------------------------------------------------------------------------------
+BEGIN
+	-- init program locals
+	stat_         = 0
+	shutdwn_req_  = FALSE
+
+	-- check config
+	stat_ = check_cfg_(cfg_)
+	IF (stat_ <> CFG_OK) THEN
+		log_error_a(LOG_PFIX + 'cfg err:', stat_)
+		log_error(LOG_PFIX + 'check cfg')
+		-- errors with config always force user to log window
+		log_force
+		POST_ERR(FILE_ILL_PRM, '', 0, SEV_ABORT)
+		RETURN
+	ENDIF
+
+
+	-- rest of config
+	sleep_time_ = ROUND(1000.0 / cfg_.loop_hz)
+
+
+	-- initialise ABORT handler
+	install_ah_
+
+
+	-- enable log output
+	IF (cfg_.um_clear) THEN log_clear; ENDIF
+
+
+	-- init server socket
+	stat_ = ssock_ctor(sock_, cfg_.s_tcp_nr , cfg_.s_tag_nr)
+	IF (stat_ <> 0) THEN
+		IF (stat_ = TAG_CONF_ERR) THEN
+			log_error_a(LOG_PFIX + 'cfg err, TAG idx:', cfg_.s_tag_nr)
+		ELSE
+			log_error_a(LOG_PFIX + 'ssock_ctor err:', stat_)
+		ENDIF
+		-- nothing we can do, abort
+		POST_ERR(HOST_CTAG_ER, '', 0, SEV_ABORT)
+	ENDIF
+
+
+	-- make sure socket is closed (don't care about result)
+	stat_ = ssock_dconnf(sock_)
+
+
+	log_info(LOG_PFIX + 'init done')
+
+
+	WHILE (NOT shutdwn_req_) DO
+
+		-- inform user
+		log_info(LOG_PFIX + 'wait client')
+
+		-- we need binary mode (UnFormatted)
+		-- KAREL Reference Manual, MARRC75KR07091E Rev C, sec 7.3.1
+		SET_FILE_ATR(sock_fd_, ATR_UF)
+
+		-- wait for connection
+		stat_ = ssock_accpt2(sock_, sock_fd_)
+		IF (stat_ <> 0) THEN
+			log_error_a(LOG_PFIX + 'sock_accept err:', stat_)
+			-- can't continue
+			shutdwn_req_ = TRUE
+			GOTO lbl_break0
+		ENDIF
+
+		-- inform user
+		log_info(LOG_PFIX + 'connected')
+
+		-- client connected, 'spin-off' connection handler
+		stat_ = hndl_client_(sock_fd_, cfg_)
+
+		-- if there was no error and we were also not requested to shutdown,
+		-- continue listening for clients
+		IF ((stat_ = 0) AND (NOT shutdwn_req_)) THEN GOTO lbl_cont0; ENDIF
+
+		-- in other cases, exit with forced disconnect
+	lbl_break0::
+		stat_ = ssock_dconn2(sock_, sock_fd_)
+
+	lbl_cont0::
+		-- wait for new client
+		log_info(LOG_PFIX + 'disconnected')
+
+		-- always delay returning to accept() a bit, to make sure user can
+		-- escape runaway loops
+		DELAY (RACCEPT_DLAY)
+
+	-- /WHILE (NOT shutdwn_req_)
+	ENDWHILE
+
+
+	-- make sure socket is closed (don t care about result)
+	stat_ = ssock_dconnf(sock_)
+
+	-- disable the ABORT handler
+	remove_ah_
+
+	-- done
+	log_info(LOG_PFIX + 'exit')
+END ros_state
+
+
+
+
+ROUTINE hndl_client_
+VAR
+	stat__       : INTEGER
+	cntr__       : INTEGER
+BEGIN
+	stat__ = 0
+	cntr__ = 0
+
+	sm000A_ctor(msg000A_)
+	sm000D_ctor(msg000D_)
+
+
+	-- service connected client
+	WHILE (NOT shutdwn_req_) DO
+
+		stat__ = upd_sm000A_(msg000A_)
+		IF (stat__ <> 0) THEN
+			log_error_a(LOG_PFIX + 'upd A err:', stat__)
+			GOTO lbl_break1
+		ENDIF
+
+		stat__ = writ_sm000A_(msg000A_, sock_fd_)
+		IF (stat__ <> 0) THEN
+			IF (stat__ <> FILE_EOF) THEN
+				log_error_a(LOG_PFIX + 'pub A err:', stat__)
+			ENDIF
+			GOTO lbl_break1
+		ENDIF
+
+		-- hard coded divisor for ROBOT_STATUS: 1/10th of JOINT_POSITION
+		cntr__ = cntr__ + 1
+		IF (cntr__ > 10) THEN
+
+			upd_sm000D_(msg000D_)
+			stat__ = writ_sm000D_(msg000D_, sock_fd_)
+			IF (stat__ <> 0) THEN
+				IF (stat__ <> FILE_EOF) THEN
+					log_error_a(LOG_PFIX + 'pub D err:', stat__)
+				ENDIF
+				GOTO lbl_break1
+			ENDIF
+
+			cntr__ = 0
+		ENDIF
+
+		DELAY (sleep_time_)
+
+	-- /WHILE (NOT shutdwn_req_)
+	ENDWHILE
+
+lbl_break1::
+	log_info(LOG_PFIX + 'hndl_client exit')
+
+	RETURN (-ABS(stat__))
+END hndl_client_
+
+
+
+
+ROUTINE upd_sm000A_
+VAR
+	stat__       : INTEGER
+	jpos__       : JOINTPOS
+BEGIN
+	stat__ = 0
+
+	-- convert Fanuc 'joint position' to ROS traj pos
+	jpos__ = CURJPOS(0, 0)
+	stat__ = jpos_to_jdta(jpos__, msg.joint_data)
+
+	RETURN (-ABS(stat__))
+END upd_sm000A_
+
+
+
+
+ROUTINE get_err_ : INTEGER
+VAR
+	seq_num__    : INTEGER
+	err_code__   : INTEGER
+	cause_code__ : INTEGER
+	time_int__   : INTEGER
+	severity__   : INTEGER
+	err_str__    : STRING[64]
+	cause_str__  : STRING[64]
+	prog_name__  : STRING[32]
+BEGIN
+	-- MAXINT requests most recent error
+	seq_num__ = MAXINT
+
+	ERR_DATA(seq_num__, err_code__, err_str__, cause_code__,
+		cause_str__, time_int__, severity__, prog_name__)
+
+	RETURN (err_code__)
+END get_err_
+
+
+
+
+ROUTINE mot_poss_(msg : sm000D_t; sstat : INTEGER) : BOOLEAN
+BEGIN
+	-- any error prevents motion, so return early
+	IF (msg.in_error <> SM_TRI_FALSE) THEN RETURN (FALSE); ENDIF
+
+	-- HOLD prevents motion as well, so return
+	IF (OPOUT[sopo_held] = ON) THEN RETURN (FALSE); ENDIF
+
+	-- drives need to be powered for motion to be possible
+	IF (msg.drvs_pwd <> SM_TRI_TRUE) THEN RETURN (FALSE); ENDIF
+
+	-- rest depends on controller mode and TP status
+	IF (msg.mode <> RS_M_AUTO) AND (TP_ENABLED) THEN
+		-- manual mode and TP is ON, motion requires:
+		--   - no errors, HOLD not depressed, drives powered (already checked)
+		--   - deadman depressed
+		--   - shift depressed
+		RETURN (((sstat AND MFS_DEADMAN) = 0) AND (TPIN[ky_shift] = ON))
+	ENDIF
+
+	-- following cases are trapped by check on 'in_error_' field:
+	--  - 'TP OFF, mode == MANUAL'
+	--  - 'TP ON , mode == AUTO'
+
+	-- sufficient conditions checked, motion should be possible
+	RETURN (TRUE)
+END mot_poss_
+
+
+
+
+ROUTINE is_running_(prog_name : STRING) : BOOLEAN
+VAR
+	stat__       : INTEGER
+	task_stat__  : INTEGER
+BEGIN
+	stat__ = 0
+	task_stat__ = 0
+
+	GET_TSK_INFO(prog_name, 0, TSK_STATUS, task_stat__, '', stat__)
+	RETURN ((stat__ = 0) AND (task_stat__ = PG_RUNNING))
+END is_running_
+
+
+
+
+ROUTINE e_stopped_(sstat : INTEGER) : BOOLEAN
+BEGIN
+	RETURN ((sstat AND (MFS_EMGOP OR MFS_EMGTP OR MFS_EMGEX)) <> 0)
+END e_stopped_
+
+
+
+
+ROUTINE upd_sm000D_
+CONST
+	JGROUP       = 1
+VAR
+	sstat__      : INTEGER
+BEGIN
+	-- 'CE/CR Select' don't work in Roboguide, so use IN_AUTO_MODE()
+	-- built-in.
+	msg.mode = RS_M_MAN
+	IF IN_AUTO_MODE THEN msg.mode = RS_M_AUTO; ENDIF
+
+	-- read current 'safety state' system variable
+	sstat__ = $MOR.$SAFETY_STAT
+
+	-- Determine state of E-Stop
+	--
+	-- NOTE: this checks TP E-Stop, Controller Cabinet E-Stop 
+	--       AND External E-Stop
+	--
+	-- '$MOR.$safety_stat', R-J3iC Software Reference Manual, 
+	-- MARACSSRF03061E Rev A
+	msg.e_stopped = SM_TRI_FALSE
+	IF (e_stopped_(sstat__)) THEN msg.e_stopped = SM_TRI_TRUE; ENDIF
+
+	-- use 'rob_move' system variable to determine if robot is currently
+	-- moving
+	msg.in_motion = SM_TRI_FALSE
+	IF ($MOR_GRP[JGROUP].$ROB_MOVE) THEN msg.in_motion = SM_TRI_TRUE; ENDIF
+
+	-- use state of FAULT LED as fault indicator, and report most recent error.
+	--
+	-- The 'FAULT' signal (OPOUT[21]) is only available when UOP signals have 
+	-- been properly configured, so use the 'FAULT LED' as an indirect 
+	-- indicator.
+	--
+	-- Table 14-2, Karel Reference Manual, MARRC75KR07091E Rev C
+	msg.in_error   = SM_TRI_FALSE
+	msg.error_code = 0
+	IF (OPOUT[sopo_fault] = ON) THEN
+		-- NOTE: this is not necessarily the code of the error that caused the
+		--       robot to go into error mode, just the most recent one
+		msg.in_error = SM_TRI_TRUE
+		msg.error_code = get_err_
+	ENDIF
+
+	-- Use 'servo_ready' system variable as indicator for 'SYSRDY' (OPOUT[17])
+	-- '$MOR_GRP[n].$servo_ready', R-J3iC Software Reference Manual, 
+	-- MARACSSRF03061E Rev A
+	msg.drvs_pwd   = SM_TRI_FALSE
+	IF ($MOR_GRP[JGROUP].$SERVO_READY) THEN msg.drvs_pwd = SM_TRI_TRUE; ENDIF
+
+	-- Derive 'motion possible' from various system variables and in/output 
+	-- signals.
+	msg.mtn_psble = SM_TRI_UNKNW
+	IF (mot_poss_(msg, sstat__)) THEN msg.mtn_psble = SM_TRI_TRUE;
+	ELSE                              msg.mtn_psble = SM_TRI_FALSE; ENDIF
+
+	-- Also: status of the trajectory relay influences 'motion possible'
+	IF ((NOT is_running_('ROS_TRAJ')) OR (NOT is_running_('ROS_MOVESM'))) THEN
+		msg.mtn_psble = SM_TRI_FALSE
+	ENDIF
+END upd_sm000D_
+
+
+
+
+ROUTINE writ_sm000A_
+VAR
+	stat__       : INTEGER
+BEGIN
+	stat__ = 0
+
+	WRITE fd(sm_hdr_len(msg.hdr) + sm000A_len(msg))
+	stat__ = IO_STATUS(fd)
+	IF (stat__ <> 0) THEN GOTO lbl_exit2; ENDIF
+
+	stat__ = sm_hdr_wrte(msg.hdr, fd)
+	IF (stat__ <> 0) THEN GOTO lbl_exit2; ENDIF
+
+	stat__ = sm000A_wrte(msg, fd)
+	IF (stat__ <> 0) THEN GOTO lbl_exit2; ENDIF
+
+lbl_exit2::
+	RETURN (-ABS(stat__))
+END writ_sm000A_
+
+
+
+
+ROUTINE writ_sm000D_
+VAR
+	stat__       : INTEGER
+BEGIN
+	stat__ = 0
+
+	WRITE fd(sm_hdr_len(msg.hdr) + sm000D_len(msg))
+	stat__ = IO_STATUS(fd)
+	IF (stat__ <> 0) THEN GOTO lbl_exit3; ENDIF
+
+	stat__ = sm_hdr_wrte(msg.hdr, fd)
+	IF (stat__ <> 0) THEN GOTO lbl_exit3; ENDIF
+
+	stat__ = sm000D_wrte(msg, fd)
+	IF (stat__ <> 0) THEN GOTO lbl_exit3; ENDIF
+
+lbl_exit3::
+	RETURN (-ABS(stat__))
+END writ_sm000D_
+
+
+
+
+ROUTINE check_cfg_
+VAR
+	a__ : BOOLEAN
+BEGIN
+	a__ = FALSE
+
+	-- set defaults for any uninitialised entries
+	IF (UNINIT(cfg.checked     )) THEN cfg.checked      = FALSE       ; a__ = TRUE; ENDIF
+	IF (UNINIT(cfg.loop_hz     )) THEN cfg.loop_hz      = LOOP_HZ     ; a__ = TRUE; ENDIF
+	IF (UNINIT(cfg.s_tag_nr    )) THEN cfg.s_tag_nr     = TAG_NR      ; a__ = TRUE; ENDIF
+	IF (UNINIT(cfg.s_tcp_nr    )) THEN cfg.s_tcp_nr     = TCP_PORT    ; a__ = TRUE; ENDIF
+	IF (UNINIT(cfg.um_clear    )) THEN cfg.um_clear     = TRUE        ; a__ = TRUE; ENDIF
+
+	-- make sure user has checked configuration
+	IF ((NOT cfg.checked) OR a__) THEN RETURN (CFG_NOTDONE); ENDIF
+
+	-- all ok
+	RETURN (CFG_OK)
+END check_cfg_
+
+
+
+
+--------------------------------------------------------------------------------
+--
+-- Application handler for ABORT signals.
+--
+--------------------------------------------------------------------------------
+ROUTINE ab_hndlr_
+BEGIN
+	shutdwn_req_ = TRUE
+	CANCEL FILE sock_fd_
+END ab_hndlr_
+
+
+
+
+--------------------------------------------------------------------------------
+--
+-- Installs a condition handler that catches ABORT signals to allow the
+-- application to 'gracefully' exit.
+--
+--------------------------------------------------------------------------------
+ROUTINE install_ah_
+BEGIN
+	CONDITION[COND_AH]: WITH $SCAN_TIME = 256
+		WHEN ABORT DO
+			NOABORT
+			ab_hndlr_
+	ENDCONDITION
+	ENABLE CONDITION[COND_AH]
+END install_ah_
+
+
+
+
+--------------------------------------------------------------------------------
+--
+-- Deregisters the ABORT condition handler.
+--
+--------------------------------------------------------------------------------
+ROUTINE remove_ah_
+BEGIN
+	PURGE CONDITION[COND_AH]
+END remove_ah_
