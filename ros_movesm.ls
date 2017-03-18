@@ -49,7 +49,7 @@ CONTROL_CODE    = 00000000 00000000;
     :  F[2:msm_dready]=(OFF) ;
     :   ;
     :  !move to point ;
-    :J PR[2:pos cache] R[3:velperc cache]% CNT R[4:cnt cache] Skip,LBL[10] ACC150    ;
+    :J PR[2:pos cache] R[3:velperc cache]% CNT R[4:cnt cache] Skip,LBL[10]    ;
     :   ;
     :  !skipped, goto handler ;
     :  JMP LBL[20] ;
