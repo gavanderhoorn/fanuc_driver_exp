@@ -377,6 +377,7 @@ BEGIN
 
 					-- stop requested: clear list, request cancel TP motion
 					sm000Bl_cler(sm000B_lst_)
+					outs_msgs__ = 0
 					cancl_mtion_(cfg)
 
 					stat__ = ack_svcreq_(msg000B_.sequence, fd)
