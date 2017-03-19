@@ -114,7 +114,11 @@ BEGIN
 	-- convert units per axis from Fanuc to ROS using conversion factors in
 	-- group info struct
 	FOR i__ = 1 TO ARRAY_LEN(joint_data) DO
-		joint_data[i__] = joint_data[i__] * grp_nfo.cnv_fa_toros[i__]
+		IF (i__ <= grp_nfo.num_axes) THEN
+			joint_data[i__] = joint_data[i__] * grp_nfo.cnv_fa_toros[i__]
+		ELSE
+			joint_data[i__] = 0.0
+		ENDIF
 	ENDFOR
 
 	RETURN (stat__)
@@ -135,7 +139,11 @@ BEGIN
 	-- convert units per axis from ROS to Fanuc using conversion factors in
 	-- group info struct
 	FOR i__ = 1 TO ARRAY_LEN(joint_data) DO
-		joint_data[i__] = joint_data[i__] * grp_nfo.cnv_ros_tofa[i__]
+		IF (i__ <= grp_nfo.num_axes) THEN
+			joint_data[i__] = joint_data[i__] * grp_nfo.cnv_ros_tofa[i__]
+		ELSE
+			joint_data[i__] = 0.0
+		ENDIF
 	ENDFOR
 
 	CNV_REL_JPOS(joint_data, jpos, stat__)
