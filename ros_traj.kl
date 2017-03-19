@@ -213,6 +213,10 @@ BEGIN
 		RETURN
 	ENDIF
 
+
+	-- enable log output
+	IF (cfg_.um_clear) THEN log_clear; ENDIF
+
 	-- rest of config
 	sleep_time_ = ROUND(1000.0 / cfg_.loop_hz)
 
@@ -229,10 +233,6 @@ BEGIN
 
 	-- initialise ABORT handler
 	install_ah_
-
-
-	-- enable log output
-	IF (cfg_.um_clear) THEN log_clear; ENDIF
 
 
 	-- init server socket
