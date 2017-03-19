@@ -53,6 +53,7 @@ PROGRAM ros_traj
 -- remote types & constants
 --
 --------------------------------------------------------------------------------
+%INCLUDE rosfanuc\rosfanuc.klt
 %INCLUDE simplemsg\msgs\sm000A.klt
 %INCLUDE simplemsg\msgs\sm000B.klt
 %INCLUDE simplemsg\simplemsg.klt
@@ -100,6 +101,9 @@ CONST
 
 	RACCEPT_DLAY = 1000  -- 'return to sock_accept' delay
 
+	MTION_GRP    =    1  -- motion group we target
+	                     -- TODO: add support for multi-group (GH #9)
+
 
 	-- Configuration defaults
 	TAG_NR       =    4  -- Server tag
@@ -108,8 +112,7 @@ CONST
 	MOVE_CNT     =   50  -- CNT value to use with ros_movesm
 
 	LOOP_HZ      =  125  -- Main loop freq (Hz).On 12ms ITP controllers
-	                     -- ROS_TRAJ will run at 83 Hz.
-	                     -- See issue 203 on GH for some discussion.
+	                     -- ROS_TRAJ will run at 83 Hz (GH #203).
 
 	MOT_SKIP_SIG =    1  -- value to write to SKIP CONDITION register to signal
 	                     -- motion abort to TP side
@@ -145,6 +148,8 @@ VAR
 	sock_                  : ssock_t        -- server socket instance
 	sock_fd_               : FILE           -- file descriptor has to be declared here
 
+	grp_nfo_               : grp_info_t     -- motion group info cache
+
 	msg000B_               : sm000B_t
 	sm000B_lst_            : sm000B_lst_t   -- list of JOINT_TRAJ_PT msgs
 
@@ -161,6 +166,7 @@ VAR
 %INCLUDE simplemsg\sm_hdr.klh
 %INCLUDE indlog\indlog.klh
 %INCLUDE libssock.klh
+%INCLUDE klrdutil.kl
 
 
 
@@ -180,7 +186,7 @@ ROUTINE check_cfg_(cfg : cfg_t) : INTEGER FROM ros_traj
 ROUTINE install_ah_ FROM ros_traj
 ROUTINE remove_ah_ FROM ros_traj
 
-ROUTINE push_pt_(msg : sm000B_t; no_block : BOOLEAN; cfg : cfg_t) : INTEGER FROM ros_traj
+ROUTINE push_pt_(msg : sm000B_t; no_block : BOOLEAN; cfg : cfg_t; grp_nfo : grp_info_t) : INTEGER FROM ros_traj
 ROUTINE cancl_mtion_(cfg : cfg_t) FROM ros_traj
 
 
@@ -207,9 +213,18 @@ BEGIN
 		RETURN
 	ENDIF
 
-
 	-- rest of config
 	sleep_time_ = ROUND(1000.0 / cfg_.loop_hz)
+
+	-- cache axis info
+	-- TODO: add multi-group support
+	stat_ = rf_ld_grpnfo(MTION_GRP, grp_nfo_)
+	IF (stat_ <> 0) THEN
+		log_error_a(LOG_PFIX + 'err axis info:', stat_)
+		-- nothing we can do
+		POST_ERR(stat_, '', 0, SEV_ABORT)
+	ENDIF
+	log_info_a(LOG_PFIX + 'loaded grp:', MTION_GRP)
 
 
 	-- initialise ABORT handler
@@ -422,7 +437,7 @@ BEGIN
 
 		-- if we have any traj pts in our buffer, try pushing the oldest one
 		-- to TP side, but do so without blocking (we'll try again next iter)
-		stat__ = push_pt_(sm000B_lst_[HEAD_OF_LIST], NO_BLOCK, cfg)
+		stat__ = push_pt_(sm000B_lst_[HEAD_OF_LIST], NO_BLOCK, cfg, grp_nfo_)
 
 		-- if TP side was busy, try again later
 		-- TODO: add 'nodelay' lbl to skip DELAY
@@ -670,8 +685,10 @@ BEGIN
 	IF (vel_perc__ > 100) THEN vel_perc__ = 100; ENDIF
 	IF (vel_perc__ <   1) THEN vel_perc__ =   1; ENDIF
 
+	-- TODO: add multi-group support
+
 	-- convert ROS traj pt to Fanuc 'joint position'
-	stat__ = jdta_to_jpos(msg.joint_data, jpos__)
+	stat__ = jdta_to_jpos(msg.joint_data, grp_nfo, jpos__)
 	IF (stat__ <> 0) THEN RETURN (-ABS(stat__)); ENDIF
 
 	-- check again here, as caller could have specified that we are

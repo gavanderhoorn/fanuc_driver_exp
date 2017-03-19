@@ -39,6 +39,17 @@ PROGRAM librosfanuc
 -- local types & constants
 -- 
 --------------------------------------------------------------------------------
+%INCLUDE rosfanuc\rosfanuc.klt
+
+
+
+
+--------------------------------------------------------------------------------
+--
+-- remote routine prototypes
+--
+--------------------------------------------------------------------------------
+%INCLUDE klrdutil.kl
 
 
 
@@ -89,30 +100,21 @@ END arr_deg2rad
 
 
 ROUTINE jpos_to_jdta
-CONST
-	JGROUP       = 1
 VAR
 	stat__       : INTEGER
 	i__          : INTEGER
 BEGIN
 	stat__ = 0
 
-	-- TODO: support multiple groups
 	-- TODO: check 'len(joint_data) == 10'
-	-- TODO: use GET_VAR(..) and cache group / axis info
 
 	CNV_JPOS_REL(jpos, joint_data, stat__)
 	IF (stat__ <> 0) THEN RETURN (-stat__); ENDIF
 
+	-- convert units per axis from Fanuc to ROS using conversion factors in
+	-- group info struct
 	FOR i__ = 1 TO ARRAY_LEN(joint_data) DO
-		IF ($SCR_GRP[JGROUP].$ROTARY_AXS[i__] = TRUE) THEN
-			-- convert degrees to radians
-			joint_data[i__] = joint_data[i__] * DEG_2_RAD
-
-		ELSE
-			-- convert mm to meters
-			joint_data[i__] = joint_data[i__] / 1e3
-		ENDIF
+		joint_data[i__] = joint_data[i__] * grp_nfo.cnv_fa_toros[i__]
 	ENDFOR
 
 	RETURN (stat__)
@@ -122,27 +124,18 @@ END jpos_to_jdta
 
 
 ROUTINE jdta_to_jpos
-CONST
-	JGROUP       = 1
 VAR
 	stat__       : INTEGER
 	i__          : INTEGER
 BEGIN
 	stat__ = 0
 
-	-- TODO: support multiple groups
 	-- TODO: check 'len(joint_data) == 10'
-	-- TODO: use GET_VAR(..) and cache group / axis info
 
+	-- convert units per axis from ROS to Fanuc using conversion factors in
+	-- group info struct
 	FOR i__ = 1 TO ARRAY_LEN(joint_data) DO
-		IF ($SCR_GRP[JGROUP].$ROTARY_AXS[i__] = TRUE) THEN
-			-- convert radians to degrees
-			joint_data[i__] = joint_data[i__] * RAD_2_DEG
-
-		ELSE
-			-- convert meters to mm
-			joint_data[i__] = joint_data[i__] * 1e3
-		ENDIF
+		joint_data[i__] = joint_data[i__] * grp_nfo.cnv_ros_tofa[i__]
 	ENDFOR
 
 	CNV_REL_JPOS(joint_data, jpos, stat__)
@@ -150,3 +143,89 @@ BEGIN
 
 	RETURN (stat__)
 END jdta_to_jpos
+
+
+
+
+ROUTINE rf_ld_grpnfo
+CONST
+	FILE_ILL_PRM =   2032  -- FILE-032 Illegal parameter
+VAR
+	stat__       : INTEGER
+	i__          : INTEGER
+	num_grps__   : INTEGER
+	grp_num__    : INTEGER
+BEGIN
+	stat__     = 0
+	i__        = 1
+	num_grps__ = 0
+	grp_num__  = 0
+
+	-- sentinel
+	grp_nfo.group_num = -1
+
+	-- here we check against MAX_NUM_GRPS, as there could be a group with an id
+	-- that is higher than the actual nr of defined motion group structures,
+	-- but the maximum valid id is still expected to be MAX_NUM_GRPS.
+	IF (grp_id < 1) OR (grp_id > MAX_NUM_GRPS) THEN
+		stat__ = FILE_ILL_PRM
+		GOTO lbl_xit_lgi
+	ENDIF
+
+	-- retrieve nr of motion groups in the system
+	GET_VAR(0, '*SYSTEM*', '$SCR.$NUM_GROUP', num_grps__, stat__)
+	IF (stat__ <> 0) THEN GOTO lbl_xit_lgi; ENDIF
+
+	-- try all groups, search for a match with 'grp_id'
+	FOR i__ = 1 TO num_grps__ DO
+
+		-- see if this is the group we're looking for
+		GET_VAR(0, '*SYSTEM*', '$SCR_GRP[' + INT_TO_STRG(i__) + '].$GROUP_NUM', grp_num__, stat__)
+		IF (stat__ <> 0) THEN GOTO lbl_xit_lgi; ENDIF
+		IF (grp_num__ <> grp_id) THEN GOTO lbl_cnt_lgi; ENDIF
+
+		-- this is our group, load info
+		grp_nfo.group_idx = i__
+		grp_nfo.group_num = grp_num__
+
+		-- use '$num_axes', as we need to report on all axes, not just the
+		-- integrated ones (which would be '$num_rob_axs')
+		GET_VAR(0, '*SYSTEM*', '$SCR_GRP[' + INT_TO_STRG(i__) + '].$NUM_AXES', grp_nfo.num_axes, stat__)
+		IF (stat__ <> 0) THEN GOTO lbl_xit_lgi; ENDIF
+
+		-- info on axis type (rotary vs linear)
+		GET_VAR(0, '*SYSTEM*', '$SCR_GRP[' + INT_TO_STRG(i__) + '].$ROTARY_AXS', grp_nfo.rotary_axs, stat__)
+		IF (stat__ <> 0) THEN GOTO lbl_xit_lgi; ENDIF
+
+		-- table of axis interaction factors
+		GET_VAR(0, '*SYSTEM*', '$MRR_GRP[' + INT_TO_STRG(i__) + '].$AXS_COUPLE', grp_nfo.axs_couple, stat__)
+		IF (stat__ <> 0) THEN GOTO lbl_xit_lgi; ENDIF
+
+	lbl_cnt_lgi::
+		-- poor-mans continue
+	ENDFOR
+
+	-- make sure we've found the requested group
+	IF (grp_nfo.group_num < 0) THEN
+		stat__ = FILE_ILL_PRM
+		GOTO lbl_xit_lgi
+	ENDIF
+
+	-- determine Fanuc->ROS and ROS->Fanuc per-axis conversion factors
+	FOR i__ = 1 TO MAX_GRP_AXES DO
+		IF (grp_nfo.rotary_axs[i__] = TRUE) THEN
+			-- revolute
+			grp_nfo.cnv_fa_toros[i__] = DEG_2_RAD  -- degrees -> radians
+			grp_nfo.cnv_ros_tofa[i__] = RAD_2_DEG  -- radians -> degrees
+
+		ELSE
+			-- linear
+			grp_nfo.cnv_fa_toros[i__] = 1e-3       -- mms -> metres
+			grp_nfo.cnv_ros_tofa[i__] = 1e3        -- metres -> mms
+		ENDIF
+	ENDFOR
+
+
+lbl_xit_lgi::
+	RETURN (-ABS(stat__))
+END rf_ld_grpnfo
