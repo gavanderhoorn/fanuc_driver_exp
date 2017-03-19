@@ -1,0 +1,41 @@
+
+-- Copyright (c) 2017, TU Delft Robotics Institute
+--
+-- Licensed under the Apache License, Version 2.0 (the "License");
+-- you may not use this file except in compliance with the License.
+-- You may obtain a copy of the License at
+--
+--     http://www.apache.org/licenses/LICENSE-2.0
+--
+-- Unless required by applicable law or agreed to in writing, software
+-- distributed under the License is distributed on an "AS IS" BASIS,
+-- WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+-- See the License for the specific language governing permissions and
+-- limitations under the License.
+
+%IFNDEF ROSFANUC_ROSFANUC_KLT__
+%DEFINE ROSFANUC_ROSFANUC_KLT__
+
+
+--------------------------------------------------------------------------------
+--
+-- librosfanuc shared type and constant decls
+--
+-- author: G.A. vd. Hoorn (TU Delft Robotics Institute)
+--
+--------------------------------------------------------------------------------
+
+
+TYPE
+	grp_info_t FROM librosfanuc = STRUCTURE
+		group_idx    : INTEGER                           -- index of group structure
+		group_num    : INTEGER                           -- group 'id'
+		num_axes     : INTEGER                           -- nr of axes in group
+		axs_couple   : ARRAY[MAX_GRP_AXES] OF SHORT      -- interaction factors between axes
+		rotary_axs   : ARRAY[MAX_GRP_AXES] OF BOOLEAN    -- IFF true: axis is revolute
+		cnv_fa_toros : ARRAY[MAX_GRP_AXES] OF REAL       -- conversion factors from Fanuc to ROS (to be used in multiplication)
+		cnv_ros_tofa : ARRAY[MAX_GRP_AXES] OF REAL       -- conversion factors from ROS to Fanuc (to be used in multiplication)
+	ENDSTRUCTURE
+
+
+%ENDIF -- ROSFANUC_ROSFANUC_KLT__

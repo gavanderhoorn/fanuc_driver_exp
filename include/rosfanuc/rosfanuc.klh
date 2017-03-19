@@ -62,12 +62,13 @@ ROUTINE arr_deg2rad(a : ARRAY OF REAL; len : INTEGER) FROM librosfanuc
 -- Convert a JOINTPOS into a JOINT_DATA array (array of 10 REALs).
 --
 -- [in    ]  jpos         : a Fanuc JOINTPOS instance
+-- [in    ]  grp_nfo      : motion group info structure for the targeted group
 -- [out   ]  joint_data   : real array (10 REALs)
 -- [return]               : < 0 IFF any error was encountered.
 --                            0 IFF 'jpos' could be converted.
 --
 --------------------------------------------------------------------------------
-ROUTINE jpos_to_jdta(jpos : JOINTPOS; joint_data : ARRAY OF REAL) : INTEGER FROM librosfanuc
+ROUTINE jpos_to_jdta(jpos : JOINTPOS; grp_nfo : grp_info_t; joint_data : ARRAY OF REAL) : INTEGER FROM librosfanuc
 
 
 
@@ -79,12 +80,36 @@ ROUTINE jpos_to_jdta(jpos : JOINTPOS; joint_data : ARRAY OF REAL) : INTEGER FROM
 -- NOTE: 'joint_data' is converted in-place.
 --
 -- [in    ]  joint_data   : real array (10 REALs)
+-- [in    ]  grp_nfo      : motion group info structure for the targeted group
 -- [out   ]  jpos         : a Fanuc JOINTPOS instance
 -- [return]               : < 0 IFF any error was encountered.
 --                            0 IFF 'joint_data' could be converted.
 --
 --------------------------------------------------------------------------------
-ROUTINE jdta_to_jpos(joint_data : ARRAY OF REAL; jpos : JOINTPOS) : INTEGER FROM librosfanuc
+ROUTINE jdta_to_jpos(joint_data : ARRAY OF REAL; grp_nfo : grp_info_t; jpos : JOINTPOS) : INTEGER FROM librosfanuc
+
+
+
+
+--------------------------------------------------------------------------------
+--
+-- Initialise 'grp_nfo' with data for the motion group with ID 'grp_id' from
+-- the system variables.
+--
+-- If a group with ID 'grp_id' cannot be found, a non-zero value will be
+-- returned, fields of 'grp_nfo' will not be initialised properly and the
+-- 'group_num' field will be set equal to '-1'.
+--
+-- NOTE: 'grp_id' is the ID of the group, NOT the index of the group structures
+--       in the system variables (ie: SCR_GRP, MRR_GRP, etc).
+--
+-- [in    ]  grp_id       : group 'id' (see earlier note)
+-- [in-out]  grp_nfo      : grp_info_t instance
+-- [return]               : <> 0 IFF any error was encountered or the group ID
+--                          could not be found
+--
+--------------------------------------------------------------------------------
+ROUTINE rf_ld_grpnfo(grp_id : INTEGER; grp_nfo : grp_info_t) : INTEGER FROM librosfanuc
 
 
 %ENDIF -- ROS_FANUC_KLH__

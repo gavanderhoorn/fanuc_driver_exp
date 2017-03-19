@@ -48,6 +48,7 @@ PROGRAM ros_state
 -- remote types & constants
 --
 --------------------------------------------------------------------------------
+%INCLUDE rosfanuc\rosfanuc.klt
 %INCLUDE simplemsg\msgs\sm000A.klt
 %INCLUDE simplemsg\msgs\sm000D.klt
 %INCLUDE simplemsg\simplemsg.klt
@@ -89,14 +90,16 @@ CONST
 
 	RACCEPT_DLAY = 1000  -- 'return to sock_accept' delay
 
+	MTION_GRP    =    1  -- motion group we target
+	                     -- TODO: add support for multi-group (GH #9)
+
 
 	-- Configuration defaults
 	TAG_NR       =    3  -- Server tag
 	TCP_PORT     = SM_SP_STATE
 
 	LOOP_HZ      =  125  -- Main loop freq (Hz). On 12ms ITP controllers
-	                     -- ROS_STATE will run at 83 Hz.
-	                     -- See issue 203 on GH for some discussion.
+	                     -- ROS_STATE will run at 83 Hz (GH #203).
 
 
 CONST
@@ -132,6 +135,8 @@ VAR
 	sock_                  : ssock_t        -- server socket instance
 	sock_fd_               : FILE           -- file descriptor has to be declared here
 
+	grp_nfo_               : grp_info_t     -- motion group info cache
+
 	msg000A_               : sm000A_t
 	msg000D_               : sm000D_t
 
@@ -161,7 +166,7 @@ VAR
 --------------------------------------------------------------------------------
 ROUTINE hndl_client_(fd : FILE; cfg : cfg_t) : INTEGER FROM ros_state
 
-ROUTINE upd_sm000A_(msg : sm000A_t) : INTEGER FROM ros_state
+ROUTINE upd_sm000A_(msg : sm000A_t; grp_nfo : grp_info_t) : INTEGER FROM ros_state
 ROUTINE upd_sm000D_(msg : sm000D_t) FROM ros_state
 
 ROUTINE writ_sm000A_(msg : sm000A_t; fd : FILE) : INTEGER FROM ros_state
@@ -196,16 +201,25 @@ BEGIN
 	ENDIF
 
 
+	-- enable log output
+	IF (cfg_.um_clear) THEN log_clear; ENDIF
+
 	-- rest of config
 	sleep_time_ = ROUND(1000.0 / cfg_.loop_hz)
+
+	-- cache axis info
+	-- TODO: add multi-group support
+	stat_ = rf_ld_grpnfo(MTION_GRP, grp_nfo_)
+	IF (stat_ <> 0) THEN
+		log_error_a(LOG_PFIX + 'err axis info:', stat_)
+		-- nothing we can do
+		POST_ERR(stat_, '', 0, SEV_ABORT)
+	ENDIF
+	log_info_a(LOG_PFIX + 'loaded grp:', MTION_GRP)
 
 
 	-- initialise ABORT handler
 	install_ah_
-
-
-	-- enable log output
-	IF (cfg_.um_clear) THEN log_clear; ENDIF
 
 
 	-- init server socket
@@ -300,7 +314,7 @@ BEGIN
 	-- service connected client
 	WHILE (NOT shutdwn_req_) DO
 
-		stat__ = upd_sm000A_(msg000A_)
+		stat__ = upd_sm000A_(msg000A_, grp_nfo_)
 		IF (stat__ <> 0) THEN
 			log_error_a(LOG_PFIX + 'upd A err:', stat__)
 			GOTO lbl_break1
@@ -353,7 +367,7 @@ BEGIN
 
 	-- convert Fanuc 'joint position' to ROS traj pos
 	jpos__ = CURJPOS(0, 0)
-	stat__ = jpos_to_jdta(jpos__, msg.joint_data)
+	stat__ = jpos_to_jdta(jpos__, grp_nfo, msg.joint_data)
 
 	RETURN (-ABS(stat__))
 END upd_sm000A_
@@ -439,8 +453,6 @@ END e_stopped_
 
 
 ROUTINE upd_sm000D_
-CONST
-	JGROUP       = 1
 VAR
 	sstat__      : INTEGER
 BEGIN
@@ -465,7 +477,7 @@ BEGIN
 	-- use 'rob_move' system variable to determine if robot is currently
 	-- moving
 	msg.in_motion = SM_TRI_FALSE
-	IF ($MOR_GRP[JGROUP].$ROB_MOVE) THEN msg.in_motion = SM_TRI_TRUE; ENDIF
+	IF ($MOR_GRP[MTION_GRP].$ROB_MOVE) THEN msg.in_motion = SM_TRI_TRUE; ENDIF
 
 	-- use state of FAULT LED as fault indicator, and report most recent error.
 	--
@@ -487,7 +499,7 @@ BEGIN
 	-- '$MOR_GRP[n].$servo_ready', R-J3iC Software Reference Manual, 
 	-- MARACSSRF03061E Rev A
 	msg.drvs_pwd   = SM_TRI_FALSE
-	IF ($MOR_GRP[JGROUP].$SERVO_READY) THEN msg.drvs_pwd = SM_TRI_TRUE; ENDIF
+	IF ($MOR_GRP[MTION_GRP].$SERVO_READY) THEN msg.drvs_pwd = SM_TRI_TRUE; ENDIF
 
 	-- Derive 'motion possible' from various system variables and in/output 
 	-- signals.
