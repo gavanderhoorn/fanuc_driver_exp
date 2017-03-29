@@ -188,6 +188,7 @@ ROUTINE remove_ah_ FROM ros_traj
 
 ROUTINE push_pt_(msg : sm000B_t; no_block : BOOLEAN; cfg : cfg_t; grp_nfo : grp_info_t) : INTEGER FROM ros_traj
 ROUTINE cancl_mtion_(cfg : cfg_t) FROM ros_traj
+ROUTINE rst_cnclmtn_(cfg : cfg_t) FROM ros_traj
 
 
 
@@ -436,8 +437,18 @@ BEGIN
 		--ENDIF
 
 
-		-- if we have any traj pts in our buffer, try pushing the oldest one
-		-- to TP side, but do so without blocking (we'll try again next iter)
+		-- if we get to this point, we know:
+		--   a) we have pts in the buffer
+		--   b) we are actually allowed to 'execute' those motions (as TRAJ
+		--      STOPs are handled earlier in this function, and if there was
+		--      a TRAJ STOP request, the buffer would be empty so we'd never
+		--      get to this point)
+
+		-- so make sure the 'motion cancel' is no longer active ..
+		rst_cnclmtn_(cfg)
+
+		-- .. and try pushing the oldest traj pt to the TP side, but do so
+		-- without blocking (we'll try again next iter)
 		stat__ = push_pt_(sm000B_lst_[HEAD_OF_LIST], NO_BLOCK, cfg, grp_nfo_)
 
 		-- if TP side was busy, try again later
@@ -728,3 +739,12 @@ BEGIN
 	log_info(LOG_PFIX + 'signal traj SKIP')
 	SET_INT_REG(cfg.r_skip_sig, MOT_SKIP_SIG, 0)
 END cancl_mtion_
+
+
+
+
+ROUTINE rst_cnclmtn_
+BEGIN
+	--log_info(LOG_PFIX + 'signal traj SKIP')
+	SET_INT_REG(cfg.r_skip_sig, 0, 0)
+END rst_cnclmtn_
