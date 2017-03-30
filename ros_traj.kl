@@ -81,6 +81,7 @@ TYPE
 		r_move_cnt   : INTEGER  -- int reg to store traj segment CNT in
 		r_skip_sig   : INTEGER  -- int reg monitored by SKIP CONDITION in TP
 		r_tseg_vel   : INTEGER  -- int reg to store traj segment joint velocity percentage in
+		s_accpt_dlay : INTEGER  -- 'return to sock_accept' delay (ms)
 		s_tag_nr     : INTEGER  -- server TAG number to use
 		s_tcp_nr     : INTEGER  -- TCP port to listen on
 		tp_val_trstp : INTEGER  -- value to set 'r_skip_sig' reg to to communicate traj stop
@@ -103,7 +104,7 @@ CONST
 	HOST_CTAG_ER = 67144 -- HOST-144 Comm Tag error
 	SEV_ABORT    =    2  -- ABORT severity
 
-	RACCEPT_DLAY = 1000  -- 'return to sock_accept' delay
+	RACCEPT_DLAY = 1000  -- default 'return to sock_accept' delay
 
 	MTION_GRP    =    1  -- motion group we target
 	                     -- TODO: add support for multi-group (GH #9)
@@ -299,7 +300,7 @@ BEGIN
 
 		-- always delay returning to accept() a bit, to make sure user can
 		-- escape runaway loops
-		DELAY (RACCEPT_DLAY)
+		DELAY (cfg_.s_accpt_dlay)
 
 	-- /WHILE (NOT shutdwn_req_)
 	ENDWHILE
@@ -608,6 +609,7 @@ BEGIN
 	IF (UNINIT(cfg.r_move_cnt  )) THEN cfg.r_move_cnt   = R_MOVE_CNT  ; a__ = TRUE; ENDIF
 	IF (UNINIT(cfg.r_skip_sig  )) THEN cfg.r_skip_sig   = R_SKPSIG_IDX; a__ = TRUE; ENDIF
 	IF (UNINIT(cfg.r_tseg_vel  )) THEN cfg.r_tseg_vel   = R_TSEGV_IDX ; a__ = TRUE; ENDIF
+	IF (UNINIT(cfg.s_accpt_dlay)) THEN cfg.s_accpt_dlay = RACCEPT_DLAY; a__ = TRUE; ENDIF
 	IF (UNINIT(cfg.s_tag_nr    )) THEN cfg.s_tag_nr     = TAG_NR      ; a__ = TRUE; ENDIF
 	IF (UNINIT(cfg.s_tcp_nr    )) THEN cfg.s_tcp_nr     = TCP_PORT    ; a__ = TRUE; ENDIF
 	IF (UNINIT(cfg.tp_val_trstp)) THEN cfg.tp_val_trstp = MOT_SKIP_SIG; a__ = TRUE; ENDIF

@@ -68,6 +68,7 @@ TYPE
 	cfg_t = STRUCTURE
 		checked      : BOOLEAN  -- user flagged: config checked
 		loop_hz      : INTEGER  -- main loop update rate (in Hz)
+		s_accpt_dlay : INTEGER  -- 'return to sock_accept' delay (ms)
 		s_tag_nr     : INTEGER  -- server TAG number to use
 		s_tcp_nr     : INTEGER  -- TCP port to listen on
 		um_clear     : BOOLEAN  -- clear user menu on start
@@ -88,7 +89,7 @@ CONST
 	HOST_CTAG_ER = 67144 -- HOST-144 Comm Tag error
 	SEV_ABORT    =    2  -- ABORT severity
 
-	RACCEPT_DLAY = 1000  -- 'return to sock_accept' delay
+	RACCEPT_DLAY = 1000  -- default 'return to sock_accept' delay
 
 	MTION_GRP    =    1  -- motion group we target
 	                     -- TODO: add support for multi-group (GH #9)
@@ -280,7 +281,7 @@ BEGIN
 
 		-- always delay returning to accept() a bit, to make sure user can
 		-- escape runaway loops
-		DELAY (RACCEPT_DLAY)
+		DELAY (cfg_.s_accpt_dlay)
 
 	-- /WHILE (NOT shutdwn_req_)
 	ENDWHILE
@@ -571,6 +572,7 @@ BEGIN
 	-- set defaults for any uninitialised entries
 	IF (UNINIT(cfg.checked     )) THEN cfg.checked      = FALSE       ; a__ = TRUE; ENDIF
 	IF (UNINIT(cfg.loop_hz     )) THEN cfg.loop_hz      = LOOP_HZ     ; a__ = TRUE; ENDIF
+	IF (UNINIT(cfg.s_accpt_dlay)) THEN cfg.s_accpt_dlay = RACCEPT_DLAY; a__ = TRUE; ENDIF
 	IF (UNINIT(cfg.s_tag_nr    )) THEN cfg.s_tag_nr     = TAG_NR      ; a__ = TRUE; ENDIF
 	IF (UNINIT(cfg.s_tcp_nr    )) THEN cfg.s_tcp_nr     = TCP_PORT    ; a__ = TRUE; ENDIF
 	IF (UNINIT(cfg.um_clear    )) THEN cfg.um_clear     = TRUE        ; a__ = TRUE; ENDIF
