@@ -36,7 +36,7 @@ PROGRAM ros_state
 --
 --------------------------------------------------------------------------------
 %ALPHABETIZE
-%COMMENT = 'ROS//r0b'
+%COMMENT = 'ROS//r1b'
 %NOLOCKGROUP
 %NOPAUSE = COMMAND + TPENABLE + ERROR
 
