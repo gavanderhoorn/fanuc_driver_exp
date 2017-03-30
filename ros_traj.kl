@@ -68,6 +68,9 @@ PROGRAM ros_traj
 --
 --------------------------------------------------------------------------------
 TYPE
+	-- NOTE: all items that configure the 'interface' with ROS_MOVESM will need
+	--       to be in-sync with whatever the ROS_MOVESM TP prog is using (flags,
+	--       int registers, pos registers, values, etc).
 	cfg_t = STRUCTURE
 		checked      : BOOLEAN  -- user flagged: config checked
 		f_msm_drdy   : INTEGER  -- flag used for 'motion sm data ready' signal
@@ -75,9 +78,9 @@ TYPE
 		loop_hz      : INTEGER  -- main loop update rate (in Hz)
 		move_cnt     : INTEGER  -- CNT to use for each motion instruction
 		pr_move      : INTEGER  -- pos reg to use for next traj pt
-		r_move_cnt   : INTEGER  -- int reg to store traj segment CNT in (%)
+		r_move_cnt   : INTEGER  -- int reg to store traj segment CNT in
 		r_skip_sig   : INTEGER  -- int reg monitored by SKIP CONDITION in TP
-		r_tseg_vel   : INTEGER  -- int reg to store traj segment joint velocity in (%)
+		r_tseg_vel   : INTEGER  -- int reg to store traj segment joint velocity percentage in
 		s_tag_nr     : INTEGER  -- server TAG number to use
 		s_tcp_nr     : INTEGER  -- TCP port to listen on
 		tp_val_trstp : INTEGER  -- value to set 'r_skip_sig' reg to to communicate traj stop
