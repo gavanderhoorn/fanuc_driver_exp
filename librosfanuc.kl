@@ -196,9 +196,12 @@ BEGIN
 		grp_nfo.group_idx = i__
 		grp_nfo.group_num = grp_num__
 
-		-- use '$num_axes', as we need to report on all axes, not just the
-		-- integrated ones (which would be '$num_rob_axs')
+		-- total nr of axes in this motion group
 		GET_VAR(0, '*SYSTEM*', '$SCR_GRP[' + INT_TO_STRG(i__) + '].$NUM_AXES', grp_nfo.num_axes, stat__)
+		IF (stat__ <> 0) THEN GOTO lbl_xit_lgi; ENDIF
+
+		-- nr of integrated axes in this motion group
+		GET_VAR(0, '*SYSTEM*', '$SCR_GRP[' + INT_TO_STRG(i__) + '].$NUM_ROB_AXS', grp_nfo.num_rob_axes, stat__)
 		IF (stat__ <> 0) THEN GOTO lbl_xit_lgi; ENDIF
 
 		-- info on axis type (rotary vs linear)

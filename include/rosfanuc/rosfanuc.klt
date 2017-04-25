@@ -30,7 +30,8 @@ TYPE
 	grp_info_t FROM librosfanuc = STRUCTURE
 		group_idx    : INTEGER                           -- index of group structure
 		group_num    : INTEGER                           -- group 'id'
-		num_axes     : INTEGER                           -- nr of axes in group
+		num_axes     : INTEGER                           -- total nr of axes in group
+		num_rob_axes : INTEGER                           -- nr of integrated axes in group
 		axs_couple   : ARRAY[MAX_GRP_AXES] OF SHORT      -- interaction factors between axes
 		rotary_axs   : ARRAY[MAX_GRP_AXES] OF BOOLEAN    -- IFF true: axis is revolute
 		cnv_fa_toros : ARRAY[MAX_GRP_AXES] OF REAL       -- conversion factors from Fanuc to ROS (to be used in multiplication)
