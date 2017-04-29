@@ -17,6 +17,7 @@
   "depends" : [
     "libindlog",
     "libsimplemsg",
+    "libmathex",
     "libstdex"
   ]
 }
