@@ -34,10 +34,10 @@ Extract the zip file to a suitable location and follow the steps under [Copying]
 In a [rossum][] workspace (on a Windows machine with Roboguide):
 
     wget https://github.com/gavanderhoorn/fanuc_driver_exp/blob/master/repos.repos
-    vcs import < repos.repos
-    mkdir fanuc_driver_exp\build
-    cd fanuc_driver_exp\build
-    rossum -p ..\..\deps ..
+    vcs import --input repos.repos
+    mkdir build
+    cd build
+    rossum -r ..\fanuc_driver_exp\robot.ini ..
     ninja
 
 Now continue with [copying](#copying) the necessary files.
