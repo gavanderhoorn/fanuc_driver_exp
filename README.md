@@ -31,6 +31,8 @@ Extract the zip file to a suitable location and follow the steps under [Copying]
 
 ### Source build
 
+Note: the below steps use Dirk Thomas' [vcstool][] to clone all required repositories with a single command (`vcstool` can be installed under Windows using `pip`). This can also be done manually: just `git clone ..` each of the repositories listed in the `repos.repos` file.
+
 In a [rossum][] workspace (on a Windows machine with Roboguide):
 
     wget https://github.com/gavanderhoorn/fanuc_driver_exp/blob/master/repos.repos
@@ -81,5 +83,6 @@ Unless stated otherwise, all code under the Apache 2.0 license.
 
 [issue 3]: https://github.com/gavanderhoorn/fanuc_driver_exp/issues/3
 [releases]: https://github.com/gavanderhoorn/fanuc_driver_exp/releases
+[vcstool]: https://github.com/dirk-thomas/vcstool
 [rossum]: https://github.com/gavanderhoorn/rossum
 [fanuc_driver/wiki/cfg]: http://wiki.ros.org/fanuc/Tutorials/hydro/Configuration
