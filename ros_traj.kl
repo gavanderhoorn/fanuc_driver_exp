@@ -128,7 +128,7 @@ CONST
 	-- ros_movesm interface defaults:
 	PR_MOVE_IDX  =    1  -- position register for current point
 
-	R_TSEGV_IDX  =    1  -- integer register: traj segment length (in ms)
+	R_TSEGV_IDX  =    1  -- integer register: traj segment velocity (in %)
 	R_MOVE_CNT   =    2  -- integer register: motion termination (in %)
 	R_SKPSIG_IDX =    5  -- integer register: SKIP CONDITION register
 
