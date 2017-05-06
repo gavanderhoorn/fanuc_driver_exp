@@ -26,7 +26,7 @@ PROGRAM librosfanuc
 -- 
 --------------------------------------------------------------------------------
 %ALPHABETIZE
-%COMMENT = 'ROS//r0b'
+%COMMENT = 'ROS//r2b'
 %NOBUSYLAMP
 %NOLOCKGROUP
 %NOPAUSE = COMMAND + TPENABLE + ERROR

@@ -41,7 +41,7 @@ PROGRAM ros_traj
 --
 --------------------------------------------------------------------------------
 %ALPHABETIZE
-%COMMENT = 'ROS//r1b'
+%COMMENT = 'ROS//r2b'
 %NOLOCKGROUP
 %NOPAUSE = COMMAND + TPENABLE + ERROR
 
