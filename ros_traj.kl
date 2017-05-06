@@ -181,7 +181,7 @@ VAR
 -- local routine prototypes
 --
 --------------------------------------------------------------------------------
-ROUTINE hndl_client_(fd : FILE; cfg : cfg_t) : INTEGER FROM ros_traj
+ROUTINE hndl_client_(fd : FILE; cfg : cfg_t; grp_nfo : grp_info_t) : INTEGER FROM ros_traj
 ROUTINE has_msgs_(len : INTEGER; fd : FILE) : INTEGER FROM ros_traj
 ROUTINE read_sm000B_(fd : FILE; msg : sm000B_t) : INTEGER FROM ros_traj
 ROUTINE ack_svcreq_(seq : INTEGER; fd : FILE) : INTEGER FROM ros_traj
@@ -284,7 +284,7 @@ BEGIN
 		log_info(LOG_PFIX + 'connected')
 
 		-- client connected, 'spin-off' connection handler
-		stat_ = hndl_client_(sock_fd_, cfg_)
+		stat_ = hndl_client_(sock_fd_, cfg_, grp_nfo_)
 
 		-- if there was no error and we were also not requested to shutdown,
 		-- continue listening for clients
@@ -454,7 +454,7 @@ BEGIN
 
 		-- .. and try pushing the oldest traj pt to the TP side, but do so
 		-- without blocking (we'll try again next iter)
-		stat__ = push_pt_(sm000B_lst_[HEAD_OF_LIST], NO_BLOCK, cfg, grp_nfo_)
+		stat__ = push_pt_(sm000B_lst_[HEAD_OF_LIST], NO_BLOCK, cfg, grp_nfo)
 
 		-- if TP side was busy, try again later
 		-- TODO: add 'nodelay' lbl to skip DELAY
