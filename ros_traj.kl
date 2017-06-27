@@ -55,7 +55,7 @@ PROGRAM ros_traj
 --------------------------------------------------------------------------------
 %INCLUDE rosfanuc\rosfanuc.klt
 %INCLUDE simplemsg\msgs\sm000A.klt
-%INCLUDE simplemsg\msgs\sm000B.klt
+%INCLUDE simplemsg\msgs\smFF78.klt
 %INCLUDE simplemsg\simplemsg.klt
 %INCLUDE libssock.klt
 
@@ -76,11 +76,11 @@ TYPE
 		f_msm_drdy   : INTEGER  -- flag used for 'motion sm data ready' signal
 		f_msm_rdy    : INTEGER  -- flag used for 'motion sm ready' signal
 		loop_hz      : INTEGER  -- main loop update rate (in Hz)
-		move_cnt     : INTEGER  -- CNT to use for each motion instruction
 		pr_move      : INTEGER  -- pos reg to use for next traj pt
-		r_move_cnt   : INTEGER  -- int reg to store traj segment CNT in
 		r_skip_sig   : INTEGER  -- int reg monitored by SKIP CONDITION in TP
-		r_tseg_vel   : INTEGER  -- int reg to store traj segment joint velocity percentage in
+		r_tseg_acc   : INTEGER  -- int reg to store traj segment acceleration in
+		r_tseg_cr    : INTEGER  -- int reg to store traj segment termination in
+		r_tseg_vel   : INTEGER  -- int reg to store traj segment linear velocity in
 		s_accpt_dlay : INTEGER  -- 'return to sock_accept' delay (ms)
 		s_tag_nr     : INTEGER  -- server TAG number to use
 		s_tcp_nr     : INTEGER  -- TCP port to listen on
@@ -128,9 +128,10 @@ CONST
 	-- ros_movesm interface defaults:
 	PR_MOVE_IDX  =    1  -- position register for current point
 
-	R_TSEGV_IDX  =    1  -- integer register: traj segment velocity (in %)
-	R_MOVE_CNT   =    2  -- integer register: motion termination (in %)
-	R_SKPSIG_IDX =    5  -- integer register: SKIP CONDITION register
+	R_TSEG_VEL   =    1  -- integer register: traj segment velocity (in mm/sec)
+	R_TSEG_CR    =    2  -- integer register: motion termination CR (in mm)
+	R_TSEG_ACC   =    3  -- integer register: motion acceleration (%, unitless)
+	R_SKPSIG_IDX =    7  -- integer register: SKIP CONDITION register
 
 	RI_MSM_RDY   =    1  -- ready signal flag
 	RI_MSM_DRDY  =    2  -- data ready signal flag
@@ -155,8 +156,8 @@ VAR
 
 	grp_nfo_               : grp_info_t     -- motion group info cache
 
-	msg000B_               : sm000B_t
-	sm000B_lst_            : sm000B_lst_t   -- list of JOINT_TRAJ_PT msgs
+	msgFF78_               : smFF78_t
+	smFF78_lst_            : smFF78_lst_t   -- list of JOINT_TRAJ_PT msgs
 
 
 
@@ -167,7 +168,7 @@ VAR
 --
 --------------------------------------------------------------------------------
 %INCLUDE rosfanuc\rosfanuc.klh
-%INCLUDE simplemsg\msgs\sm000B.klh
+%INCLUDE simplemsg\msgs\smFF78.klh
 %INCLUDE simplemsg\sm_hdr.klh
 %INCLUDE indlog\indlog.klh
 %INCLUDE libssock.klh
@@ -183,7 +184,7 @@ VAR
 --------------------------------------------------------------------------------
 ROUTINE hndl_client_(fd : FILE; cfg : cfg_t; grp_nfo : grp_info_t) : INTEGER FROM ros_traj
 ROUTINE has_msgs_(len : INTEGER; fd : FILE) : INTEGER FROM ros_traj
-ROUTINE read_sm000B_(fd : FILE; msg : sm000B_t) : INTEGER FROM ros_traj
+ROUTINE read_smFF78_(fd : FILE; msg : smFF78_t) : INTEGER FROM ros_traj
 ROUTINE ack_svcreq_(seq : INTEGER; fd : FILE) : INTEGER FROM ros_traj
 ROUTINE nack_svcreq_(seq : INTEGER; fd : FILE) : INTEGER FROM ros_traj
 
@@ -191,7 +192,7 @@ ROUTINE check_cfg_(cfg : cfg_t) : INTEGER FROM ros_traj
 ROUTINE install_ah_ FROM ros_traj
 ROUTINE remove_ah_ FROM ros_traj
 
-ROUTINE push_pt_(msg : sm000B_t; no_block : BOOLEAN; cfg : cfg_t; grp_nfo : grp_info_t) : INTEGER FROM ros_traj
+ROUTINE push_pt_(msg : smFF78_t; no_block : BOOLEAN; cfg : cfg_t; grp_nfo : grp_info_t) : INTEGER FROM ros_traj
 ROUTINE cancl_mtion_(cfg : cfg_t) FROM ros_traj
 ROUTINE rst_cnclmtn_(cfg : cfg_t) FROM ros_traj
 
@@ -334,12 +335,12 @@ BEGIN
 
 
 	-- init msg instance and msg list
-	sm000B_ctor(msg000B_)
-	stat__ = sm000Bl_ctor(sm000B_lst_)
+	smFF78_ctor(msgFF78_)
+	stat__ = smFF78l_ctor(smFF78_lst_)
 
 
 	-- calc nr of bytes we need for single msg (include pkt_len here)
-	req_len__ = 4 + sm_hdr_len(msg000B_.hdr) + sm000B_len(msg000B_)
+	req_len__ = 4 + sm_hdr_len(msgFF78_.hdr) + smFF78_len(msgFF78_)
 
 
 	-- service connected client
@@ -358,15 +359,15 @@ BEGIN
 		IF (stat__ = 0) THEN GOTO lbl_cnomsg; ENDIF
 
 		-- deserialise
-		stat__ = read_sm000B_(fd, msg000B_)
+		stat__ = read_smFF78_(fd, msgFF78_)
 		IF (stat__ <> 0) THEN
 			log_error_a(LOG_PFIX + 'B read err:', stat__)
 			GOTO lbl_break1
 		ENDIF
 
 		-- crude check
-		IF (msg000B_.hdr.msg_type <> SM000B_ID) THEN
-			log_error_a(LOG_PFIX + 'ignore unkn msg:', msg000B_.hdr.msg_type)
+		IF (msgFF78_.hdr.msg_type <> SMFF78_ID) THEN
+			log_error_a(LOG_PFIX + 'ignore unkn msg:', msgFF78_.hdr.msg_type)
 			-- TODO: should we just ignore msgs that we don't know? This could
 			--       be a desync, which we can't recover from.
 			GOTO lbl_break1
@@ -374,26 +375,26 @@ BEGIN
 
 
 		-- check special sequence nrs: if TRAJ STOP, clear list and abort current motion
-		IF (msg000B_.sequence < 0) THEN
+		IF (msgFF78_.sequence < 0) THEN
 
 			-- we only support TRAJ_STOP special seq nr
-			SELECT (msg000B_.sequence) OF
+			SELECT (msgFF78_.sequence) OF
 				CASE (SM_SEQ_STPRJ):
 					log_info(LOG_PFIX + 'traj STOP')
 
 					-- stop requested: clear list, request cancel TP motion
-					sm000Bl_cler(sm000B_lst_)
+					smFF78l_cler(smFF78_lst_)
 					outs_msgs__ = 0
 					cancl_mtion_(cfg)
 
-					stat__ = ack_svcreq_(msg000B_.sequence, fd)
+					stat__ = ack_svcreq_(msgFF78_.sequence, fd)
 
 				ELSE:
-					log_warn_a(LOG_PFIX + 'unsupp seq:', msg000B_.sequence)
+					log_warn_a(LOG_PFIX + 'unsupp seq:', msgFF78_.sequence)
 					log_warn(LOG_PFIX + 'please report')
 
 					-- NACK this msg, but ros-industrial/industrial_core#118 ..
-					stat__ = nack_svcreq_(msg000B_.sequence, fd)
+					stat__ = nack_svcreq_(msgFF78_.sequence, fd)
 			ENDSELECT
 
 			-- failure to send reply is failure of everything, so exit client
@@ -407,7 +408,7 @@ BEGIN
 
 
 		-- finally add new traj pt to list
-		sm000Bl_apnd(sm000B_lst_, msg000B_)
+		smFF78l_apnd(smFF78_lst_, msgFF78_)
 		outs_msgs__ = outs_msgs__ + 1
 
 
@@ -415,13 +416,13 @@ BEGIN
 	lbl_cnomsg::
 
 		-- if len(buffer) < threshold, request next one (ie: ACK)
-		IF (sm000Bl_size(sm000B_lst_) < cfg.trjpt_buf_sz) AND (outs_msgs__ > 0) THEN
+		IF (smFF78l_size(smFF78_lst_) < cfg.trjpt_buf_sz) AND (outs_msgs__ > 0) THEN
 
 			-- TODO: debug only
-			log_info_a(LOG_PFIX + 'ack:', msg000B_.sequence)
+			log_info_a(LOG_PFIX + 'ack:', msgFF78_.sequence)
 
 			-- ACK msg we just received
-			stat__ = ack_svcreq_(msg000B_.sequence, fd)
+			stat__ = ack_svcreq_(msgFF78_.sequence, fd)
 			outs_msgs__ = outs_msgs__ - 1
 
 			-- failure to send reply is failure of everything, so exit client
@@ -431,13 +432,13 @@ BEGIN
 
 
 		-- if we don't have any outstanding traj pts, skip the rest
-		IF (sm000Bl_mpty(sm000B_lst_)) THEN GOTO lbl_cont1; ENDIF
+		IF (smFF78l_mpty(smFF78_lst_)) THEN GOTO lbl_cont1; ENDIF
 
 
 		-- TODO: check whether we are already at destination. If so: skip
 		--       traj pt
-		--IF (sm000B_lst_[HEAD_OF_LIST].sequence = 0) THEN
-		--	sm000Bl_rmov(sm000B_lst_, HEAD_OF_LIST)
+		--IF (smFF78_lst_[HEAD_OF_LIST].sequence = 0) THEN
+		--	smFF78l_rmov(smFF78_lst_, HEAD_OF_LIST)
 		--	GOTO lbl_cont1
 		--ENDIF
 
@@ -454,7 +455,7 @@ BEGIN
 
 		-- .. and try pushing the oldest traj pt to the TP side, but do so
 		-- without blocking (we'll try again next iter)
-		stat__ = push_pt_(sm000B_lst_[HEAD_OF_LIST], NO_BLOCK, cfg, grp_nfo)
+		stat__ = push_pt_(smFF78_lst_[HEAD_OF_LIST], NO_BLOCK, cfg, grp_nfo)
 
 		-- if TP side was busy, try again later
 		-- TODO: add 'nodelay' lbl to skip DELAY
@@ -467,10 +468,10 @@ BEGIN
 		ENDIF
 
 		-- TODO: debug only
-		log_info_a(LOG_PFIX + 'pushed:', sm000B_lst_[HEAD_OF_LIST].sequence)
+		log_info_a(LOG_PFIX + 'pushed:', smFF78_lst_[HEAD_OF_LIST].sequence)
 
 		-- push successfull, remove
-		sm000Bl_rmov(sm000B_lst_, HEAD_OF_LIST)
+		smFF78l_rmov(smFF78_lst_, HEAD_OF_LIST)
 
 
 		-- sleep a little
@@ -509,7 +510,7 @@ END has_msgs_
 
 
 
-ROUTINE read_sm000B_
+ROUTINE read_smFF78_
 VAR
 	stat__       : INTEGER
 	len__        : INTEGER
@@ -524,12 +525,12 @@ BEGIN
 	stat__ = sm_hdr_read(msg.hdr, fd)
 	IF (stat__ <> 0) THEN GOTO lbl_exitB1; ENDIF
 
-	stat__ = sm000B_read(msg, fd)
+	stat__ = smFF78_read(msg, fd)
 	IF (stat__ <> 0) THEN GOTO lbl_exitB1; ENDIF
 
 lbl_exitB1::
 	RETURN (-ABS(stat__))
-END read_sm000B_
+END read_smFF78_
 
 
 
@@ -604,11 +605,11 @@ BEGIN
 	IF (UNINIT(cfg.f_msm_drdy  )) THEN cfg.f_msm_drdy   = RI_MSM_DRDY ; a__ = TRUE; ENDIF
 	IF (UNINIT(cfg.f_msm_rdy   )) THEN cfg.f_msm_rdy    = RI_MSM_RDY  ; a__ = TRUE; ENDIF
 	IF (UNINIT(cfg.loop_hz     )) THEN cfg.loop_hz      = LOOP_HZ     ; a__ = TRUE; ENDIF
-	IF (UNINIT(cfg.move_cnt    )) THEN cfg.move_cnt     = MOVE_CNT    ; a__ = TRUE; ENDIF
 	IF (UNINIT(cfg.pr_move     )) THEN cfg.pr_move      = PR_MOVE_IDX ; a__ = TRUE; ENDIF
-	IF (UNINIT(cfg.r_move_cnt  )) THEN cfg.r_move_cnt   = R_MOVE_CNT  ; a__ = TRUE; ENDIF
 	IF (UNINIT(cfg.r_skip_sig  )) THEN cfg.r_skip_sig   = R_SKPSIG_IDX; a__ = TRUE; ENDIF
-	IF (UNINIT(cfg.r_tseg_vel  )) THEN cfg.r_tseg_vel   = R_TSEGV_IDX ; a__ = TRUE; ENDIF
+	IF (UNINIT(cfg.r_tseg_acc  )) THEN cfg.r_tseg_acc   = R_TSEG_ACC  ; a__ = TRUE; ENDIF
+	IF (UNINIT(cfg.r_tseg_cr   )) THEN cfg.r_tseg_cr    = R_TSEG_CR   ; a__ = TRUE; ENDIF
+	IF (UNINIT(cfg.r_tseg_vel  )) THEN cfg.r_tseg_vel   = R_TSEG_VEL  ; a__ = TRUE; ENDIF
 	IF (UNINIT(cfg.s_accpt_dlay)) THEN cfg.s_accpt_dlay = RACCEPT_DLAY; a__ = TRUE; ENDIF
 	IF (UNINIT(cfg.s_tag_nr    )) THEN cfg.s_tag_nr     = TAG_NR      ; a__ = TRUE; ENDIF
 	IF (UNINIT(cfg.s_tcp_nr    )) THEN cfg.s_tcp_nr     = TCP_PORT    ; a__ = TRUE; ENDIF
@@ -689,25 +690,43 @@ END remove_ah_
 --
 --------------------------------------------------------------------------------
 ROUTINE push_pt_
+CONST
+	ACC_MIN      =    0
+	ACC_MAX      =  150
+	VEL_MIN      =    1
+	VEL_MAX      = 4000
 VAR
 	stat__       : INTEGER
-	vel_perc__   : INTEGER
-	jpos__       : JOINTPOS
+	vel__        : INTEGER
+	acc__        : INTEGER
+	pose__       : XYZWPR
+	pcfg__       : CONFIG
 BEGIN
 	-- if TP has not signalled 'ready' and we can't block, return
 	IF (no_block AND (FLG[cfg.f_msm_rdy] = OFF)) THEN
 		RETURN (-EWOULDBLOCK)
 	ENDIF
 
-	-- map ROS velocity to Fanuc joint vel
-	vel_perc__ = ROUND(msg.velocity * 1e2)
-	IF (vel_perc__ > 100) THEN vel_perc__ = 100; ENDIF
-	IF (vel_perc__ <   1) THEN vel_perc__ =   1; ENDIF
+	-- clip vel
+	vel__ = msg.vel
+	IF (vel__ < vel_MIN) THEN vel__ = vel_MIN; ENDIF
+	IF (vel__ > vel_MAX) THEN vel__ = vel_MAX; ENDIF
+
+	-- clip acc
+	acc__ = msg.acc
+	IF (acc__ < ACC_MIN) THEN acc__ = ACC_MIN; ENDIF
+	IF (acc__ > ACC_MAX) THEN acc__ = ACC_MAX; ENDIF
 
 	-- TODO: add multi-group support
 
-	-- convert ROS traj pt to Fanuc 'joint position'
-	stat__ = jdta_to_jpos(msg.joint_data, grp_nfo, jpos__)
+	-- convert 'ROS' traj pt to Fanuc pose
+	pose__.x = msg.pose[1]
+	pose__.y = msg.pose[2]
+	pose__.z = msg.pose[3]
+	pose__.w = msg.pose[4]
+	pose__.p = msg.pose[5]
+	pose__.r = msg.pose[6]
+	CNV_STR_CONF('u t, 0, 0', pose__.config_data, stat__)
 	IF (stat__ <> 0) THEN RETURN (-ABS(stat__)); ENDIF
 
 	-- check again here, as caller could have specified that we are
@@ -715,16 +734,21 @@ BEGIN
 	-- is already 'ON' and we will not block here)
 	WAIT FOR (FLG[cfg.f_msm_rdy] = ON)
 
-	-- set target joint pos
-	SET_JPOS_REG(cfg.pr_move, jpos__, stat__)
+	-- set target position
+	SET_POS_REG(cfg.pr_move, pose__, stat__)
 	IF (stat__ <> 0) THEN RETURN (-stat__); ENDIF
 
-	-- set traj segment velocity, percentage of max joint vel
-	SET_INT_REG(cfg.r_tseg_vel, vel_perc__, stat__)
+	-- set traj segment velocity
+	SET_INT_REG(cfg.r_tseg_vel, vel__, stat__)
 	IF (stat__ <> 0) THEN RETURN (-stat__); ENDIF
 
-	-- set motion termination (from config)
-	SET_INT_REG(cfg.r_move_cnt, cfg.move_cnt, stat__)
+	-- TODO: this is actually not possibe: CR cannot come from a reg
+	-- set motion termination
+	--SET_INT_REG(cfg.r_tseg_cr, msg.cr_, stat__)
+	--IF (stat__ <> 0) THEN RETURN (-stat__); ENDIF
+
+	-- set traj segment acceleration
+	SET_INT_REG(cfg.r_tseg_acc, acc__, stat__)
 	IF (stat__ <> 0) THEN RETURN (-stat__); ENDIF
 
 	-- signal new pt available
