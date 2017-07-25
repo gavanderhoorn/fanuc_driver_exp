@@ -9,7 +9,9 @@
     "librosfanuc.kl",
     "libssock.kl",
     "ros_state.kl",
-    "ros_traj.kl"
+    "ros_traj.kl",
+    "rstate_cfg.kl",
+    "rtraj_cfg.kl"
   ],
   "includes" : [
     "include"

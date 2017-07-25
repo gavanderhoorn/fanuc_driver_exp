@@ -1,0 +1,171 @@
+
+-- Copyright (c) 2017, TU Delft Robotics Institute
+--
+-- Licensed under the Apache License, Version 2.0 (the "License");
+-- you may not use this file except in compliance with the License.
+-- You may obtain a copy of the License at
+--
+--     http://www.apache.org/licenses/LICENSE-2.0
+--
+-- Unless required by applicable law or agreed to in writing, software
+-- distributed under the License is distributed on an "AS IS" BASIS,
+-- WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+-- See the License for the specific language governing permissions and
+-- limitations under the License.
+
+
+PROGRAM rtraj_cfg
+--------------------------------------------------------------------------------
+--
+-- ROS-Industrial configuration setup program - ROS_TRAJ.
+--
+-- NOTE: this program will configure ROS_TRAJ with its DEFAULT SETTINGS.
+--
+--
+-- author: G.A. vd. Hoorn (TU Delft Robotics Institute)
+--
+--------------------------------------------------------------------------------
+%ALPHABETIZE
+%COMMENT = 'ROS//r2b'
+%NOLOCKGROUP
+%NOPAUSE = COMMAND + TPENABLE + ERROR
+
+
+
+
+--------------------------------------------------------------------------------
+--
+-- remote types & constants
+--
+--------------------------------------------------------------------------------
+%INCLUDE simplemsg\simplemsg.klt
+
+
+
+
+--------------------------------------------------------------------------------
+--
+-- local types & constants
+--
+--------------------------------------------------------------------------------
+CONST
+	PROG_NAME    = 'ROS_TRAJ'
+
+	FILE_ILL_PRM =  2032 -- FILE-032 Illegal parameter
+	SEV_ABORT    =    2  -- ABORT severity
+
+	-- config defaults
+	RACCEPT_DLAY = 1000  -- default 'return to sock_accept' delay
+
+	TAG_NR       =    4  -- Server tag
+	TCP_PORT     = SM_SP_MOTION
+
+	MOVE_CNT     =   50  -- CNT value to use with ros_movesm
+
+	LOOP_HZ      =  125  -- Main loop freq (Hz).On 12ms ITP controllers
+	                     -- ROS_TRAJ will run at 83 Hz (GH #203).
+
+	MOT_SKIP_SIG =    1  -- value to write to SKIP CONDITION register to signal
+	                     -- motion abort to TP side
+
+	BUF_THRSHLD  =    6  -- desired nr of TRAJ_PTs in buffer
+
+
+	-- ros_movesm interface defaults:
+	PR_MOVE_IDX  =    1  -- position register for current point
+
+	R_TSEGV_IDX  =    1  -- integer register: traj segment velocity (in %)
+	R_MOVE_CNT   =    2  -- integer register: motion termination (in %)
+	R_SKPSIG_IDX =    5  -- integer register: SKIP CONDITION register
+
+	RI_MSM_RDY   =    1  -- ready signal flag
+	RI_MSM_DRDY  =    2  -- data ready signal flag
+
+
+
+
+--------------------------------------------------------------------------------
+--
+-- local variables
+--
+--------------------------------------------------------------------------------
+VAR
+	stat_        : INTEGER
+
+
+
+
+--------------------------------------------------------------------------------
+--
+-- remote routine prototypes
+--
+--------------------------------------------------------------------------------
+
+
+
+
+--------------------------------------------------------------------------------
+--
+-- local routine prototypes
+--
+--------------------------------------------------------------------------------
+
+
+
+
+--------------------------------------------------------------------------------
+--
+-- Main program
+--
+--------------------------------------------------------------------------------
+BEGIN
+	stat_ = 0
+
+	-- set all settings to their defaults
+
+	SET_VAR(0, PROG_NAME, 'cfg_.checked', FALSE, stat_)
+	IF (stat_ <> 0) THEN POST_ERR(FILE_ILL_PRM, '', 0, SEV_ABORT); ENDIF
+
+	SET_VAR(0, PROG_NAME, 'cfg_.f_msm_drdy', RI_MSM_DRDY, stat_)
+	IF (stat_ <> 0) THEN POST_ERR(FILE_ILL_PRM, '', 0, SEV_ABORT); ENDIF
+
+	SET_VAR(0, PROG_NAME, 'cfg_.f_msm_rdy', RI_MSM_RDY, stat_)
+	IF (stat_ <> 0) THEN POST_ERR(FILE_ILL_PRM, '', 0, SEV_ABORT); ENDIF
+
+	SET_VAR(0, PROG_NAME, 'cfg_.loop_hz', LOOP_HZ, stat_)
+	IF (stat_ <> 0) THEN POST_ERR(FILE_ILL_PRM, '', 0, SEV_ABORT); ENDIF
+
+	SET_VAR(0, PROG_NAME, 'cfg_.move_cnt', MOVE_CNT, stat_)
+	IF (stat_ <> 0) THEN POST_ERR(FILE_ILL_PRM, '', 0, SEV_ABORT); ENDIF
+
+	SET_VAR(0, PROG_NAME, 'cfg_.pr_move', PR_MOVE_IDX, stat_)
+	IF (stat_ <> 0) THEN POST_ERR(FILE_ILL_PRM, '', 0, SEV_ABORT); ENDIF
+
+	SET_VAR(0, PROG_NAME, 'cfg_.r_move_cnt', R_MOVE_CNT, stat_)
+	IF (stat_ <> 0) THEN POST_ERR(FILE_ILL_PRM, '', 0, SEV_ABORT); ENDIF
+
+	SET_VAR(0, PROG_NAME, 'cfg_.r_skip_sig', R_SKPSIG_IDX, stat_)
+	IF (stat_ <> 0) THEN POST_ERR(FILE_ILL_PRM, '', 0, SEV_ABORT); ENDIF
+
+	SET_VAR(0, PROG_NAME, 'cfg_.r_tseg_vel', R_TSEGV_IDX, stat_)
+	IF (stat_ <> 0) THEN POST_ERR(FILE_ILL_PRM, '', 0, SEV_ABORT); ENDIF
+
+	SET_VAR(0, PROG_NAME, 'cfg_.s_accpt_dlay', RACCEPT_DLAY, stat_)
+	IF (stat_ <> 0) THEN POST_ERR(FILE_ILL_PRM, '', 0, SEV_ABORT); ENDIF
+
+	SET_VAR(0, PROG_NAME, 'cfg_.s_tag_nr', TAG_NR, stat_)
+	IF (stat_ <> 0) THEN POST_ERR(FILE_ILL_PRM, '', 0, SEV_ABORT); ENDIF
+
+	SET_VAR(0, PROG_NAME, 'cfg_.s_tcp_nr', TCP_PORT, stat_)
+	IF (stat_ <> 0) THEN POST_ERR(FILE_ILL_PRM, '', 0, SEV_ABORT); ENDIF
+
+	SET_VAR(0, PROG_NAME, 'cfg_.tp_val_trstp', MOT_SKIP_SIG, stat_)
+	IF (stat_ <> 0) THEN POST_ERR(FILE_ILL_PRM, '', 0, SEV_ABORT); ENDIF
+
+	SET_VAR(0, PROG_NAME, 'cfg_.trjpt_buf_sz', BUF_THRSHLD, stat_)
+	IF (stat_ <> 0) THEN POST_ERR(FILE_ILL_PRM, '', 0, SEV_ABORT); ENDIF
+
+	SET_VAR(0, PROG_NAME, 'cfg_.um_clear', TRUE, stat_)
+	IF (stat_ <> 0) THEN POST_ERR(FILE_ILL_PRM, '', 0, SEV_ABORT); ENDIF
+
+END rtraj_cfg

@@ -1,0 +1,107 @@
+!
+! Copyright (c) 2017, TU Delft Robotics Institute
+!
+! Licensed under the Apache License, Version 2.0 (the "License");
+! you may not use this file except in compliance with the License.
+! You may obtain a copy of the License at
+!
+!     http://www.apache.org/licenses/LICENSE-2.0
+!
+! Unless required by applicable law or agreed to in writing, software
+! distributed under the License is distributed on an "AS IS" BASIS,
+! WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+! See the License for the specific language governing permissions and
+! limitations under the License.
+!
+! --------------------
+!
+! ROS-Industrial Fanuc Driver 'Exp' setup script.
+!
+! author: G.A. vd. Hoorn (TU Delft Robotics Institute)
+!
+! version: ROS//r3b
+!
+! NOTE: THIS FILE MUST BE IN THE ROOT OF THE REMOVABLE MEDIUM (USB STICK,
+!       PCMCIA CARD) OR IT WILL NOT WORK.
+!
+! --------------------
+!
+PRINT "ROS-I V0.1 (FDE V0.1.0-R3B)"
+!
+! Check for and report on required options:
+!
+!  - R632: Karel
+!  - R648: User Socket Messaging
+!
+! If the controller doesn't have R632, we can continue, but USM is
+! absolutely necessary.
+!
+WR_FILE install.log "INFO  | install start"
+WR_FILE install.log "INFO  | prereqs"
+IF ORDER R632 ! has Karel
+  PRINT "R632 (Karel): OK"
+  WR_FILE install.log "INFO  | R632 (Karel): OK"
+ELSE
+  ! R632 is not strictly needed
+  PRINT "R632 (Karel): missing, continue"
+  WR_FILE install.log "WARN  | R632 (Karel): missing"
+ENDIF
+!
+IF ORDER R648 ! has User Socket Messagin
+  PRINT "R648 (USM): OK"
+  WR_FILE install.log "INFO  | R648 (USM): OK"
+ELSE
+  PRINT "R648 (USM): missing -> FATAL"
+  WR_FILE install.log "FATAL | R648 (USM): missing, FATAL"
+  WR_FILE install.log "FATAL | abort"
+  ABORT
+ENDIF
+WR_FILE install.log "INFO  | end prereqs"
+!
+! Copy new files
+PRINT "Installing driver files"
+WR_FILE install.log "INFO  | start file copy"
+PCLOAD product\fdexp\libindlog.pc
+PCLOAD product\fdexp\libmathex.pc
+PCLOAD product\fdexp\librosfanuc.pc
+PCLOAD product\fdexp\libssock.pc
+PCLOAD product\fdexp\libsm_hdr.pc
+PCLOAD product\fdexp\libsm000a.pc
+PCLOAD product\fdexp\libsm000b.pc
+PCLOAD product\fdexp\libsm000d.pc
+PCLOAD product\fdexp\ros_state.pc
+PCLOAD product\fdexp\ros_traj.pc
+TPLOAD product\fdexp\ros.tp
+TPLOAD product\fdexp\ros_movesm.tp
+WR_FILE install.log "INFO  | end file copy"
+!
+! Set sysvars
+! TODO: decide whether this is something we want to do here
+!PRINT "Updating sysvars"
+!WR_FILE install.log "INFO  | start update sysvars"
+!SETVAR $KAREL_ENB 1
+!WR_FILE install.log "INFO  | end update sysvars"
+!
+PRINT "Loading default configs"
+WR_FILE install.log "INFO  | start config update"
+!
+PRINT "  ros_state"
+WR_FILE install.log "INFO  | ros_state .."
+PCLOAD product\fdexp\rstate_cfg.pc
+RUNPC RSTATE_CFG
+DELPC RSTATE_CFG
+VRCLEAR RSTATE_CFG
+!
+PRINT "  ros_traj"
+WR_FILE install.log "INFO  | ros_traj .."
+PCLOAD product\fdexp\rtraj_cfg.pc
+RUNPC RTRAJ_CFG
+DELPC RTRAJ_CFG
+VRCLEAR RTRAJ_CFG
+!
+WR_FILE install.log "INFO  | end config update"
+!
+PRINT "install complete"
+WR_FILE install.log "INFO  | install complete"
+!
+EXIT

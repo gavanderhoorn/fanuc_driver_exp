@@ -1,0 +1,126 @@
+
+-- Copyright (c) 2017, TU Delft Robotics Institute
+--
+-- Licensed under the Apache License, Version 2.0 (the "License");
+-- you may not use this file except in compliance with the License.
+-- You may obtain a copy of the License at
+--
+--     http://www.apache.org/licenses/LICENSE-2.0
+--
+-- Unless required by applicable law or agreed to in writing, software
+-- distributed under the License is distributed on an "AS IS" BASIS,
+-- WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+-- See the License for the specific language governing permissions and
+-- limitations under the License.
+
+
+PROGRAM rstate_cfg
+--------------------------------------------------------------------------------
+--
+-- ROS-Industrial configuration setup program - ROS_STATE.
+--
+-- NOTE: this program will configure ROS_STATE with its DEFAULT SETTINGS.
+--
+--
+-- author: G.A. vd. Hoorn (TU Delft Robotics Institute)
+--
+--------------------------------------------------------------------------------
+%ALPHABETIZE
+%COMMENT = 'ROS//r2b'
+%NOLOCKGROUP
+%NOPAUSE = COMMAND + TPENABLE + ERROR
+
+
+
+
+--------------------------------------------------------------------------------
+--
+-- remote types & constants
+--
+--------------------------------------------------------------------------------
+%INCLUDE simplemsg\simplemsg.klt
+
+
+
+
+--------------------------------------------------------------------------------
+--
+-- local types & constants
+--
+--------------------------------------------------------------------------------
+CONST
+	PROG_NAME    = 'ROS_STATE'
+
+	FILE_ILL_PRM =  2032 -- FILE-032 Illegal parameter
+	SEV_ABORT    =    2  -- ABORT severity
+
+	-- config defaults
+	RACCEPT_DLAY = 1000  -- default 'return to sock_accept' delay
+
+	TAG_NR       =    3  -- Server tag
+	TCP_PORT     = SM_SP_STATE
+
+	LOOP_HZ      =  125  -- Main loop freq (Hz). On 12ms ITP controllers
+	                     -- ROS_STATE will run at 83 Hz (GH #203).
+
+
+
+
+--------------------------------------------------------------------------------
+--
+-- local variables
+--
+--------------------------------------------------------------------------------
+VAR
+	stat_        : INTEGER
+
+
+
+
+--------------------------------------------------------------------------------
+--
+-- remote routine prototypes
+--
+--------------------------------------------------------------------------------
+
+
+
+
+--------------------------------------------------------------------------------
+--
+-- local routine prototypes
+--
+--------------------------------------------------------------------------------
+
+
+
+
+--------------------------------------------------------------------------------
+--
+-- Main program
+--
+--------------------------------------------------------------------------------
+BEGIN
+	stat_ = 0
+
+	-- set all settings to their defaults
+
+	SET_VAR(0, PROG_NAME, 'cfg_.checked', FALSE, stat_)
+	IF (stat_ <> 0) THEN POST_ERR(FILE_ILL_PRM, '', 0, SEV_ABORT); ENDIF
+
+	SET_VAR(0, PROG_NAME, 'cfg_.loop_hz', LOOP_HZ, stat_)
+	IF (stat_ <> 0) THEN POST_ERR(FILE_ILL_PRM, '', 0, SEV_ABORT); ENDIF
+
+	SET_VAR(0, PROG_NAME, 'cfg_.s_accpt_dlay', RACCEPT_DLAY, stat_)
+	IF (stat_ <> 0) THEN POST_ERR(FILE_ILL_PRM, '', 0, SEV_ABORT); ENDIF
+
+	SET_VAR(0, PROG_NAME, 'cfg_.s_tag_nr', TAG_NR, stat_)
+	IF (stat_ <> 0) THEN POST_ERR(FILE_ILL_PRM, '', 0, SEV_ABORT); ENDIF
+
+	SET_VAR(0, PROG_NAME, 'cfg_.s_tcp_nr', TCP_PORT, stat_)
+	IF (stat_ <> 0) THEN POST_ERR(FILE_ILL_PRM, '', 0, SEV_ABORT); ENDIF
+
+	SET_VAR(0, PROG_NAME, 'cfg_.um_clear', TRUE, stat_)
+	IF (stat_ <> 0) THEN POST_ERR(FILE_ILL_PRM, '', 0, SEV_ABORT); ENDIF
+
+END rstate_cfg

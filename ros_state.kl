@@ -89,18 +89,8 @@ CONST
 	HOST_CTAG_ER = 67144 -- HOST-144 Comm Tag error
 	SEV_ABORT    =    2  -- ABORT severity
 
-	RACCEPT_DLAY = 1000  -- default 'return to sock_accept' delay
-
 	MTION_GRP    =    1  -- motion group we target
 	                     -- TODO: add support for multi-group (GH #9)
-
-
-	-- Configuration defaults
-	TAG_NR       =    3  -- Server tag
-	TCP_PORT     = SM_SP_STATE
-
-	LOOP_HZ      =  125  -- Main loop freq (Hz). On 12ms ITP controllers
-	                     -- ROS_STATE will run at 83 Hz (GH #203).
 
 
 CONST
@@ -564,21 +554,17 @@ END writ_sm000D_
 
 
 ROUTINE check_cfg_
-VAR
-	a__ : BOOLEAN
 BEGIN
-	a__ = FALSE
-
-	-- set defaults for any uninitialised entries
-	IF (UNINIT(cfg.checked     )) THEN cfg.checked      = FALSE       ; a__ = TRUE; ENDIF
-	IF (UNINIT(cfg.loop_hz     )) THEN cfg.loop_hz      = LOOP_HZ     ; a__ = TRUE; ENDIF
-	IF (UNINIT(cfg.s_accpt_dlay)) THEN cfg.s_accpt_dlay = RACCEPT_DLAY; a__ = TRUE; ENDIF
-	IF (UNINIT(cfg.s_tag_nr    )) THEN cfg.s_tag_nr     = TAG_NR      ; a__ = TRUE; ENDIF
-	IF (UNINIT(cfg.s_tcp_nr    )) THEN cfg.s_tcp_nr     = TCP_PORT    ; a__ = TRUE; ENDIF
-	IF (UNINIT(cfg.um_clear    )) THEN cfg.um_clear     = TRUE        ; a__ = TRUE; ENDIF
+	-- make sure config has been setup
+	IF (UNINIT(cfg.checked     )) THEN RETURN (CFG_NOTDONE); ENDIF
+	IF (UNINIT(cfg.loop_hz     )) THEN RETURN (CFG_NOTDONE); ENDIF
+	IF (UNINIT(cfg.s_accpt_dlay)) THEN RETURN (CFG_NOTDONE); ENDIF
+	IF (UNINIT(cfg.s_tag_nr    )) THEN RETURN (CFG_NOTDONE); ENDIF
+	IF (UNINIT(cfg.s_tcp_nr    )) THEN RETURN (CFG_NOTDONE); ENDIF
+	IF (UNINIT(cfg.um_clear    )) THEN RETURN (CFG_NOTDONE); ENDIF
 
 	-- make sure user has checked configuration
-	IF ((NOT cfg.checked) OR a__) THEN RETURN (CFG_NOTDONE); ENDIF
+	IF (NOT cfg.checked) THEN RETURN (CFG_NOTDONE); ENDIF
 
 	-- all ok
 	RETURN (CFG_OK)

@@ -1,0 +1,49 @@
+!
+! Copyright (c) 2017, TU Delft Robotics Institute
+!
+! Licensed under the Apache License, Version 2.0 (the "License");
+! you may not use this file except in compliance with the License.
+! You may obtain a copy of the License at
+!
+!     http://www.apache.org/licenses/LICENSE-2.0
+!
+! Unless required by applicable law or agreed to in writing, software
+! distributed under the License is distributed on an "AS IS" BASIS,
+! WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+! See the License for the specific language governing permissions and
+! limitations under the License.
+!
+! --------------------
+!
+! ROS-Industrial Fanuc Driver 'Exp' uninstall script.
+!
+! author: G.A. vd. Hoorn (TU Delft Robotics Institute)
+!
+! NOTE: this does NOT undo the changes to $HOSTS_CFG.
+!
+! version: ROS//r3b
+!
+! --------------------
+!
+DELPC   LIBINDLOG
+VRCLEAR LIBINDLOG
+DELPC   LIBMATHEX
+VRCLEAR LIBMATHEX
+DELPC   LIBROSFANUC
+VRCLEAR LIBROSFANUC
+DELPC   LIBSM000A
+VRCLEAR LIBSM000A
+DELPC   LIBSM000B
+VRCLEAR LIBSM000B
+DELPC   LIBSM000D
+VRCLEAR LIBSM000D
+DELPC   LIBSM_HDR
+VRCLEAR LIBSM_HDR
+DELPC   LIBSSOCK
+VRCLEAR LIBSSOCK
+DELPC   ROS_STATE
+VRCLEAR ROS_STATE
+DELPC   ROS_TRAJ
+VRCLEAR ROS_TRAJ
+DELTP   ROS
+DELTP   ROS_MOVESM
