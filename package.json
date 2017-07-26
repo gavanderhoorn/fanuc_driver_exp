@@ -6,12 +6,12 @@
   "license" : "Apache 2.0",
   "author" : "G.A. vd. Hoorn",
   "source" : [
-    "librosfanuc.kl",
-    "libssock.kl",
-    "ros_state.kl",
-    "ros_traj.kl",
-    "rstate_cfg.kl",
-    "rtraj_cfg.kl"
+    "src/librosfanuc.kl",
+    "src/libssock.kl",
+    "src/ros_state.kl",
+    "src/ros_traj.kl",
+    "src/rstate_cfg.kl",
+    "src/rtraj_cfg.kl"
   ],
   "includes" : [
     "include"
