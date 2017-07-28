@@ -26,7 +26,7 @@ PROGRAM rtraj_cfg
 --
 --------------------------------------------------------------------------------
 %ALPHABETIZE
-%COMMENT = 'ROS//r2b'
+%COMMENT = 'ROS//r3b'
 %NOLOCKGROUP
 %NOPAUSE = COMMAND + TPENABLE + ERROR
 
