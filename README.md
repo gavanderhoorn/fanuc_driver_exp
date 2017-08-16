@@ -47,6 +47,28 @@ Now continue with [copying](#copying) the necessary files.
 
 ## Copying
 
+### Using the provided scripts
+
+This is the recommended way to install.
+
+Note: the following steps refer to *removable media*. This can either be a USB stick (FAT32 formatted), or a PCMCIA memory card. Refer to the relevant Fanuc documentation for more information.
+
+ 1. Extract the binary distribution zip file to the root of the removable medium.
+ 1. Check and make sure the `install.cm`, `uninstall.cm` and the `product` directory are **in the root of the drive**. Placing them in sub directories will **not work**.
+ 1. For a USB stick, insert it either into the TP, or in one of the ports on the controller. For a memory card, insert it into the slot on the controller.
+ 1. Using the TP, browse to the root of the device that corresponds to whichever removable medium contains the driver's files.
+ 1. Highlight the `uninstall.cm` file, press `ENTER`. Some warnings may be expected, if files were / are not present.
+ 1. Highlight the `install.cm` file, press `ENTER`.
+
+Status output is printed to the TP and the installation process should complete with a confirmation shown on the screen.
+
+An installation log is written to the removable medium (`install.log`).
+
+
+### Manually
+
+This method of installation is recommended only when customising the Karel programs or if using a removable medium or the installation scripts is not possible.
+
 Copy the following files to the controller:
 
  - libindlog.pc
@@ -59,15 +81,19 @@ Copy the following files to the controller:
  - libssock.pc
  - ros_state.pc
  - ros_traj.pc
- - ros.ls
- - ros_movesm.ls
+ - rstate_cfg.pc
+ - rtraj_cfg.pc
+ - ros.tp (or the .ls version)
+ - ros_movesm.tp (or the .ls version)
+
+If this is a fresh install, run the `RSTATE_CFG` and the `RTRAJ_CFG` programs **once**.
 
 
 ## Configuration
 
 Configuration is similar to that of `fanuc_driver`. See [fanuc_driver/wiki/cfg][] for more information (but note that `fanuc_driver_exp` has additional configuration entries which have not been documented yet).
 
-Note that upon first start, both `ROS_STATE` as well as `ROS_TRAJ` will setup defaults. It is recommended to run the `ROS` TP program at least once, and only then edit the configuration of the Karel programs.
+Note that upon startup, both `ROS_STATE` as well as `ROS_TRAJ` will check their configuration. If any item is not present or set correctly, or the `CHECKED` item is not set to `TRUE`, a `FILE-032 Illegal parameter` error will be shown on the TP and the programs will be terminated. In that case open the *Karel Vars* of the faulting program (either `ROS_STATE` or `ROS_TRAJ`) and update the configuration. Make sure everything is correct, and finally set `CHECKED` to `TRUE`.
 
 
 ## Running
