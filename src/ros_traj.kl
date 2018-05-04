@@ -647,23 +647,23 @@ END remove_ah_
 --------------------------------------------------------------------------------
 ROUTINE estop_hndlr_
 VAR
-  task_name : STRING[32]
+	task_name : STRING[32]
 	force : BOOLEAN
-	cancel_motion : BOOLEAN
+	cancel_mtn : BOOLEAN
 	status: INTEGER
 BEGIN
 	task_name = '*ALL*'
 	force = TRUE
-	cancel_motion = TRUE
+	cancel_mtn = TRUE
 	WRITE (CHR(128)) -- clear screen
 
-	ABORT_TASK(task_name, force, cancel_motion, status)
+	ABORT_TASK(task_name, force, cancel_mtn, status)
 	IF (STATUS<>0)	THEN
 		FORCE_SPMENU (TP_PANEL, SPI_TPUSER, 1)
 		WRITE (CR, 'Error Status:', status, '')
 		WRITE (CR, 'ABORT_TASK(all) failed.')
 		POST_ERR(STATUS, '', 0, 2)
-	else
+	ELSE
 		FORCE_SPMENU (TP_PANEL, SPI_TPUSER, 1)
 		WRITE (CR,'All tasks aborted.')
 	ENDIF
@@ -674,7 +674,7 @@ BEGIN
 		WRITE (CR, 'Error Status:', status, '')
 		WRITE (CR, 'selecting ROS program.')
 		POST_ERR(status, '', 0, 2)
-	else
+	ELSE
 		FORCE_SPMENU (TP_PANEL, SPI_TPUSER, 1)
 		WRITE (CR, 'ROS program selected.')
 	ENDIF
@@ -688,13 +688,21 @@ END estop_hndlr_
 --
 --------------------------------------------------------------------------------
 ROUTINE install_es_
+VAR
+	panel_estop: INTEGER
+	tp_estop: INTEGER
+	ext_estop: INTEGER
 BEGIN
+	panel_estop = 11001
+	tp_estop = 11002
+	ext_estop = 11007
+
 	CONDITION[COND_ES]: WITH $SCAN_TIME = 256
-		WHEN ERROR[estop] DO
+		WHEN ERROR[panel_estop] OR ERROR[tp_estop] OR ERROR[ext_estop] DO
 			UNPAUSE
 			ENABLE CONDITION[COND_ES]
-			estop_hndlr
-	END CONDITION
+			estop_hndlr_
+	ENDCONDITION
 	ENABLE CONDITION[COND_ES]
 END install_es_
 
