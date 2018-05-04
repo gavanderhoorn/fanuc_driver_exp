@@ -130,6 +130,7 @@ VAR
 
 	msg000B_               : sm000B_t
 	sm000B_lst_            : sm000B_lst_t   -- list of JOINT_TRAJ_PT msgs
+	outs_msgs_             : INTEGER
 
 
 
@@ -305,11 +306,11 @@ CONST
 VAR
 	stat__       : INTEGER
 	req_len__    : INTEGER
-	outs_msgs__  : INTEGER
 BEGIN
-	-- init 'thread' locals
+	-- init 'thread' local
 	stat__       = 0
-	outs_msgs__  = 0
+
+	outs_msgs_  = 0
 
 
 	-- init msg instance and msg list
@@ -362,7 +363,7 @@ BEGIN
 
 					-- stop requested: clear list, request cancel TP motion
 					sm000Bl_cler(sm000B_lst_)
-					outs_msgs__ = 0
+					outs_msgs_ = 0
 					cancl_mtion_(cfg)
 
 					stat__ = ack_svcreq_(msg000B_.sequence, fd)
@@ -387,21 +388,21 @@ BEGIN
 
 		-- finally add new traj pt to list
 		sm000Bl_apnd(sm000B_lst_, msg000B_)
-		outs_msgs__ = outs_msgs__ + 1
+		outs_msgs_ = outs_msgs_ + 1
 
 
 	-- 'continue without a new message'
 	lbl_cnomsg::
 
 		-- if len(buffer) < threshold, request next one (ie: ACK)
-		IF (sm000Bl_size(sm000B_lst_) < cfg.trjpt_buf_sz) AND (outs_msgs__ > 0) THEN
+		IF (sm000Bl_size(sm000B_lst_) < cfg.trjpt_buf_sz) AND (outs_msgs_ > 0) THEN
 
 			-- TODO: debug only
 			log_info_a(LOG_PFIX + 'ack:', msg000B_.sequence)
 
 			-- ACK msg we just received
 			stat__ = ack_svcreq_(msg000B_.sequence, fd)
-			outs_msgs__ = outs_msgs__ - 1
+			outs_msgs_ = outs_msgs_ - 1
 
 			-- failure to send reply is failure of everything, so exit client
 			-- hndlr 'thread'
@@ -655,12 +656,10 @@ ROUTINE estop_hndlr_
 VAR
 	status: INTEGER
 BEGIN
-	CNCL_STP_MTN(status)
-	IF (status<>0)	THEN
-		log_info_a(LOG_PFIX + 'Cancel motion error:', status)
-	ELSE
-		log_info(LOG_PFIX + 'E-stop cancelled motions')
-	ENDIF
+	-- E-stop pressed, so clear list, request cancel TP motion
+	sm000Bl_cler(sm000B_lst_)
+	outs_msgs_ = 0
+	cancl_mtion_(cfg_)
 END estop_hndlr_
 
 --------------------------------------------------------------------------------
