@@ -163,6 +163,8 @@ ROUTINE nack_svcreq_(seq : INTEGER; fd : FILE) : INTEGER FROM ros_traj
 ROUTINE check_cfg_(cfg : cfg_t) : INTEGER FROM ros_traj
 ROUTINE install_ah_ FROM ros_traj
 ROUTINE remove_ah_ FROM ros_traj
+ROUTINE install_es_ FROM ros_traj
+ROUTINE remove_es_ FROM ros_traj
 
 ROUTINE push_pt_(msg : sm000B_t; no_block : BOOLEAN; cfg : cfg_t; grp_nfo : grp_info_t) : INTEGER FROM ros_traj
 ROUTINE cancl_mtion_(cfg : cfg_t) FROM ros_traj
@@ -213,6 +215,8 @@ BEGIN
 	-- initialise ABORT handler
 	install_ah_
 
+	-- initialize ESTOP handler
+	install_es_
 
 	-- init server socket
 	stat_ = ssock_ctor(sock_, cfg_.s_tcp_nr , cfg_.s_tag_nr)
@@ -284,6 +288,8 @@ BEGIN
 
 	-- disable the ABORT handler
 	remove_ah_
+	-- disable the ESTOP handler
+	remove_es_
 
 	-- done
 	log_info(LOG_PFIX + 'exit')
