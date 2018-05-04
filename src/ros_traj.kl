@@ -95,6 +95,7 @@ CONST
 
 	COND_AH      =  736  -- ABORT handler id (randomly chosen, but less
 	                     -- likely to clash than simply '1')
+	COND_ES      =  737  -- E-stop handler id
 
 	CFG_OK       =    0  -- config ok
 	CFG_NOTDONE  =   -1  -- configuration not checked: user action required
@@ -636,6 +637,76 @@ ROUTINE remove_ah_
 BEGIN
 	PURGE CONDITION[COND_AH]
 END remove_ah_
+
+
+
+--------------------------------------------------------------------------------
+--
+-- Handler for E-stop.
+--
+--------------------------------------------------------------------------------
+ROUTINE estop_hndlr_
+VAR
+  task_name : STRING[32]
+  force_sw : BOOLEAN
+  cancelm_sw : BOOLEAN
+  status: INTEGER
+BEGIN
+  task_name = '*ALL*'
+  force = TRUE
+  cancel_motion = TRUE
+  WRITE (CHR(128)) -- clear screen
+
+  ABORT_TASK(task_name, force, cancel_motion, status)
+  IF (STATUS<>0)  THEN
+    FORCE_SPMENU (TP_PANEL, SPI_TPUSER, 1)
+    WRITE (CR, 'Error Status:', status, '')
+    WRITE (CR, 'ABORT_TASK(all) failed.')
+    POST_ERR(STATUS, '', 0, 2)
+  else
+    FORCE_SPMENU (TP_PANEL, SPI_TPUSER, 1)
+    WRITE (CR,'All tasks aborted.')
+  ENDIF
+
+  SELECT_TPE('ROS', status)
+  IF (status<>0)  THEN
+  FORCE_SPMENU (TP_PANEL, SPI_TPUSER, 1)
+    WRITE (CR, 'Error Status:', status, '')
+    WRITE (CR, 'selecting ROS program.')
+    POST_ERR(status, '', 0, 2)
+  else
+    FORCE_SPMENU (TP_PANEL, SPI_TPUSER, 1)
+    WRITE (CR, 'ROS program selected.')
+  ENDIF
+  ABORT
+END estop_hndlr_
+
+--------------------------------------------------------------------------------
+--
+-- Installs a condition handler that catches E-stop signals so restarting
+-- does not make it continue previous motion.
+--
+--------------------------------------------------------------------------------
+ROUTINE install_es_
+BEGIN
+	CONDITION[COND_ES]: WITH $SCAN_TIME = 256
+    WHEN ERROR[estop] DO
+      UNPAUSE
+      ENABLE CONDITION[COND_ES]
+      estop_hndlr
+  END CONDITION
+  ENABLE CONDITION[COND_ES]
+END install_es_
+
+--------------------------------------------------------------------------------
+--
+-- Deregisters the e-stop condition handler.
+--
+--------------------------------------------------------------------------------
+ROUTINE remove_es_
+BEGIN
+	PURGE CONDITION[COND_ES]
+END remove_es_
 
 
 
