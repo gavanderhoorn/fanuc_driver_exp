@@ -130,7 +130,7 @@ VAR
 
 	msg000B_               : sm000B_t
 	sm000B_lst_            : sm000B_lst_t   -- list of JOINT_TRAJ_PT msgs
-	outs_msgs_             : INTEGER
+	outs_msgs_             : INTEGER        -- number of messages received and to ACK
 
 
 
