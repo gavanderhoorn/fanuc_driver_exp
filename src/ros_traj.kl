@@ -673,17 +673,13 @@ END estop_hndlr_
 --
 --------------------------------------------------------------------------------
 ROUTINE install_es_
-VAR
-	panel_estop: INTEGER
-	tp_estop: INTEGER
-	ext_estop: INTEGER
+CONST
+	ERR_PAN_ESTP = 11001
+	ERR_TP_ESTOP = 11002
+	ERR_EXT_ESTP = 11007
 BEGIN
-	panel_estop = 11001
-	tp_estop = 11002
-	ext_estop = 11007
-
 	CONDITION[COND_ES]: WITH $SCAN_TIME = 256
-		WHEN ERROR[panel_estop] OR ERROR[tp_estop] OR ERROR[ext_estop] DO
+		WHEN ERROR[ERR_PAN_ESTP] OR ERROR[ERR_TP_ESTOP] OR ERROR[ERR_EXT_ESTP] DO
 			UNPAUSE
 			ENABLE CONDITION[COND_ES]
 			estop_hndlr_
