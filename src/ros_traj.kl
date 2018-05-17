@@ -95,6 +95,7 @@ CONST
 
 	COND_AH      =  736  -- ABORT handler id (randomly chosen, but less
 	                     -- likely to clash than simply '1')
+	COND_ES      =  737  -- E-stop handler id
 
 	CFG_OK       =    0  -- config ok
 	CFG_NOTDONE  =   -1  -- configuration not checked: user action required
@@ -129,6 +130,7 @@ VAR
 
 	msg000B_               : sm000B_t
 	sm000B_lst_            : sm000B_lst_t   -- list of JOINT_TRAJ_PT msgs
+	outs_msgs_             : INTEGER        -- number of messages received and to ACK
 
 
 
@@ -162,6 +164,8 @@ ROUTINE nack_svcreq_(seq : INTEGER; fd : FILE) : INTEGER FROM ros_traj
 ROUTINE check_cfg_(cfg : cfg_t) : INTEGER FROM ros_traj
 ROUTINE install_ah_ FROM ros_traj
 ROUTINE remove_ah_ FROM ros_traj
+ROUTINE install_es_ FROM ros_traj
+ROUTINE remove_es_ FROM ros_traj
 
 ROUTINE push_pt_(msg : sm000B_t; no_block : BOOLEAN; cfg : cfg_t; grp_nfo : grp_info_t) : INTEGER FROM ros_traj
 ROUTINE cancl_mtion_(cfg : cfg_t) FROM ros_traj
@@ -212,6 +216,8 @@ BEGIN
 	-- initialise ABORT handler
 	install_ah_
 
+	-- initialize ESTOP handler
+	install_es_
 
 	-- init server socket
 	stat_ = ssock_ctor(sock_, cfg_.s_tcp_nr , cfg_.s_tag_nr)
@@ -283,6 +289,8 @@ BEGIN
 
 	-- disable the ABORT handler
 	remove_ah_
+	-- disable the ESTOP handler
+	remove_es_
 
 	-- done
 	log_info(LOG_PFIX + 'exit')
@@ -298,11 +306,11 @@ CONST
 VAR
 	stat__       : INTEGER
 	req_len__    : INTEGER
-	outs_msgs__  : INTEGER
 BEGIN
-	-- init 'thread' locals
+	-- init 'thread' local
 	stat__       = 0
-	outs_msgs__  = 0
+
+	outs_msgs_  = 0
 
 
 	-- init msg instance and msg list
@@ -355,7 +363,7 @@ BEGIN
 
 					-- stop requested: clear list, request cancel TP motion
 					sm000Bl_cler(sm000B_lst_)
-					outs_msgs__ = 0
+					outs_msgs_ = 0
 					cancl_mtion_(cfg)
 
 					stat__ = ack_svcreq_(msg000B_.sequence, fd)
@@ -380,21 +388,21 @@ BEGIN
 
 		-- finally add new traj pt to list
 		sm000Bl_apnd(sm000B_lst_, msg000B_)
-		outs_msgs__ = outs_msgs__ + 1
+		outs_msgs_ = outs_msgs_ + 1
 
 
 	-- 'continue without a new message'
 	lbl_cnomsg::
 
 		-- if len(buffer) < threshold, request next one (ie: ACK)
-		IF (sm000Bl_size(sm000B_lst_) < cfg.trjpt_buf_sz) AND (outs_msgs__ > 0) THEN
+		IF (sm000Bl_size(sm000B_lst_) < cfg.trjpt_buf_sz) AND (outs_msgs_ > 0) THEN
 
 			-- TODO: debug only
 			log_info_a(LOG_PFIX + 'ack:', msg000B_.sequence)
 
 			-- ACK msg we just received
 			stat__ = ack_svcreq_(msg000B_.sequence, fd)
-			outs_msgs__ = outs_msgs__ - 1
+			outs_msgs_ = outs_msgs_ - 1
 
 			-- failure to send reply is failure of everything, so exit client
 			-- hndlr 'thread'
@@ -636,6 +644,61 @@ ROUTINE remove_ah_
 BEGIN
 	PURGE CONDITION[COND_AH]
 END remove_ah_
+
+
+
+
+--------------------------------------------------------------------------------
+--
+-- Handler for E-stop.
+--
+--------------------------------------------------------------------------------
+ROUTINE estop_hndlr_
+VAR
+	status: INTEGER
+BEGIN
+	-- E-stop pressed, so clear list, request cancel TP motion
+	sm000Bl_cler(sm000B_lst_)
+	outs_msgs_ = 0
+	cancl_mtion_(cfg_)
+END estop_hndlr_
+
+
+
+
+--------------------------------------------------------------------------------
+--
+-- Installs a condition handler that catches E-stop signals so restarting
+-- does not make it continue previous motion.
+--
+--------------------------------------------------------------------------------
+ROUTINE install_es_
+CONST
+	ERR_PAN_ESTP = 11001
+	ERR_TP_ESTOP = 11002
+	ERR_EXT_ESTP = 11007
+BEGIN
+	CONDITION[COND_ES]: WITH $SCAN_TIME = 256
+		WHEN ERROR[ERR_PAN_ESTP] OR ERROR[ERR_TP_ESTOP] OR ERROR[ERR_EXT_ESTP] DO
+			UNPAUSE
+			ENABLE CONDITION[COND_ES]
+			estop_hndlr_
+	ENDCONDITION
+	ENABLE CONDITION[COND_ES]
+END install_es_
+
+
+
+
+--------------------------------------------------------------------------------
+--
+-- Deregisters the e-stop condition handler.
+--
+--------------------------------------------------------------------------------
+ROUTINE remove_es_
+BEGIN
+	PURGE CONDITION[COND_ES]
+END remove_es_
 
 
 
