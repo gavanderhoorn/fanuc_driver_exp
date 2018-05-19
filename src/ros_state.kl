@@ -357,7 +357,7 @@ BEGIN
 	stat__ = 0
 
 	-- convert Fanuc 'joint position' to ROS traj pos
-	jpos__ = CURJPOS(0, 0)
+	jpos__ = CURJPOS(0, 0, MTION_GRP)
 	stat__ = jpos_to_jdta(jpos__, grp_nfo, msg.joint_data)
 
 	RETURN (-ABS(stat__))
