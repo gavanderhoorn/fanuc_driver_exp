@@ -19,12 +19,26 @@ PROGRAM ros_state
 --
 -- ROS-Industrial joint state and robot status publisher.
 --
+-- This version assumes two motion groups:
+--
+--  - first group: regular 6 axes robot
+--  - second group: 2-axes positioner
+--
+-- The joint states of the second group are merged with those of the first,
+-- by inserting the two axes of the positioner after the 6 axes of the main
+-- robot in the JOINT_POSITION message.
+--
+--
+-- NOTE: ROBOT_STATUS msgs will only reflect state of group1 (but states are
+-- typically linked anyway).
+--
+--
 -- Currently only supports JOINT_POSITION and ROBOT_STATUS msgs.
 --
 --
 -- Assumptions:
 --   - User Socket Messaging (USM) is supported by robot
---   - There is only 1 motion group
+--   - There are two motion groups: robot and positioner
 --
 --
 -- Configuration defaults:
@@ -36,7 +50,7 @@ PROGRAM ros_state
 --
 --------------------------------------------------------------------------------
 %ALPHABETIZE
-%COMMENT = 'ROS//r3b'
+%COMMENT = 'ROS//r3bg2-2'
 %NOLOCKGROUP
 %NOPAUSE = COMMAND + TPENABLE + ERROR
 
@@ -91,6 +105,7 @@ CONST
 
 	MTION_GRP    =    1  -- motion group we target
 	                     -- TODO: add support for multi-group (GH #9)
+	MTION_GRP2   =    2  -- bit of a hack
 
 
 CONST
@@ -127,6 +142,7 @@ VAR
 	sock_fd_               : FILE           -- file descriptor has to be declared here
 
 	grp_nfo_               : grp_info_t     -- motion group info cache
+	grp2_nfo_              : grp_info_t     -- motion group info cache grp2
 
 	msg000A_               : sm000A_t
 	msg000D_               : sm000D_t
@@ -207,6 +223,15 @@ BEGIN
 		POST_ERR(stat_, '', 0, SEV_ABORT)
 	ENDIF
 	log_info_a(LOG_PFIX + 'loaded grp:', MTION_GRP)
+
+	-- cache axis info
+	stat_ = rf_ld_grpnfo(MTION_GRP2, grp2_nfo_)
+	IF (stat_ <> 0) THEN
+		log_error_a(LOG_PFIX + 'err axis2 info:', stat_)
+		-- nothing we can do
+		POST_ERR(stat_, '', 0, SEV_ABORT)
+	ENDIF
+	log_info_a(LOG_PFIX + 'loaded grp:', MTION_GRP2)
 
 
 	-- initialise ABORT handler
@@ -353,12 +378,29 @@ ROUTINE upd_sm000A_
 VAR
 	stat__       : INTEGER
 	jpos__       : JOINTPOS
+	jpos2__      : JOINTPOS
+	temp__       : ARRAY[10] OF REAL
 BEGIN
 	stat__ = 0
 
 	-- convert Fanuc 'joint position' to ROS traj pos
-	jpos__ = CURJPOS(0, 0, MTION_GRP)
+
+	-- get both states first, to avoid delays as much as possible
+	jpos__  = CURJPOS(0, 0, MTION_GRP)
+	jpos2__ = CURJPOS(0, 0, MTION_GRP2)
+
+	-- grp1
 	stat__ = jpos_to_jdta(jpos__, grp_nfo, msg.joint_data)
+	IF (stat__ <> 0) THEN RETURN (-ABS(stat__)); ENDIF
+
+	-- grp2
+	stat__ = jpos_to_jdta(jpos2__, grp2_nfo_, temp__)
+	IF (stat__ <> 0) THEN RETURN (-ABS(stat__)); ENDIF
+
+	-- hack: combine
+	-- put axis 1 and 2 of grp2 in slots 7 and 8 of grp 1
+	msg.joint_data[7] = temp__[1]
+	msg.joint_data[8] = temp__[2]
 
 	RETURN (-ABS(stat__))
 END upd_sm000A_
