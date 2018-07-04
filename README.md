@@ -35,7 +35,7 @@ Note: the below steps use Dirk Thomas' [vcstool][] to clone all required reposit
 
 In a [rossum][] workspace (on a Windows machine with Roboguide):
 
-    wget https://github.com/gavanderhoorn/fanuc_driver_exp/blob/master/repos.repos
+    wget https://raw.githubusercontent.com/gavanderhoorn/fanuc_driver_exp/master/repos.repos
     vcs import --input repos.repos
     mkdir build
     cd build
