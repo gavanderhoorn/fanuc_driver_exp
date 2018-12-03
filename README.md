@@ -17,6 +17,19 @@ Main differences with `fanuc_driver`:
  - extensive use of `rossum` build infrastructure support (modularity, code reuse)
 
 
+## Note on performance
+
+While this implementation of a ROS driver for Fanuc controllers has improved upon `fanuc_driver` already, it could still be improved quite significantly. This is especially true for the motion performance, both in terms of maximum attainable robot velocity as well as in the trade-off between smoothness and accuracy (or: path / trajectory reproduction).
+
+With the current understanding of Fanuc controller internals it would appear that the trade-off between motion smoothness and trajectory reproduction accuracy (ie: `CNT`) will *always* be a limiting factor to any kind of external motion control with Fanuc controllers (that use(d) publicly available interfaces to that controller).
+
+Dense trajectories will cause significant slowdown of the robot leading to total path execution duration significantly exceeding the specified timestamps. Coarse trajectories will lead to inaccuracte motions, but higher maximum robot velocity attained.
+
+The current implementation (with a single point buffer and a minimum TP program to execute the motion) does not permit the controller to make use of its look-ahead functionality, which severely bottlenecks it and leads to suboptimal motion in almost all cases (in terms of velocity and continuity: the robot will still reach the commanded position(s)).
+
+This driver is therefore better suited to pick-and-place type of applications (ie: discrete motions in which the goal positions are more important than the path itself) and less for applications that require accurate control over all aspects of the motion at all times (ie: continuous applications in which the path itself is as-important or more important than the final destination).
+
+
 ## Installation
 
 Installation using a binary distribution is preferred, but building from sources is also supported.
