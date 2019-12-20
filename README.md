@@ -23,7 +23,7 @@ While this implementation of a ROS driver for Fanuc controllers has improved upo
 
 With the current understanding of Fanuc controller internals it would appear that the trade-off between motion smoothness and trajectory reproduction accuracy (ie: `CNT`) will *always* be a limiting factor to any kind of external motion control with Fanuc controllers (that use(d) publicly available interfaces to that controller).
 
-Dense trajectories will cause significant slowdown of the robot leading to total path execution duration significantly exceeding the specified timestamps. Coarse trajectories will lead to inaccuracte motions, but higher maximum robot velocity attained.
+Dense trajectories will cause significant slowdown of the robot leading to total path execution duration significantly exceeding the specified timestamps. Coarse trajectories will lead to inaccurate motions, but higher maximum robot velocity attained.
 
 The current implementation (with a single point buffer and a minimum TP program to execute the motion) does not permit the controller to make use of its look-ahead functionality, which severely bottlenecks it and leads to suboptimal motion in almost all cases (in terms of velocity and continuity: the robot will still reach the commanded position(s)).
 
