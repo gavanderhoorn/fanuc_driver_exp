@@ -1,6 +1,6 @@
 # fanuc_driver_exp
 
-A new - experimental - Fanuc robot driver for ROS-Industrial.
+An alternative - experimental - Fanuc robot driver for ROS-Industrial.
 
 
 ## Overview
