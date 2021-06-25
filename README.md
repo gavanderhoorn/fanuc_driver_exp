@@ -84,20 +84,20 @@ This method of installation is recommended only when customising the Karel progr
 
 Copy the following files to the controller:
 
- - libindlog.pc
- - libmathex.pc
- - librosfanuc.pc
- - libsm000a.pc
- - libsm000b.pc
- - libsm000d.pc
- - libsm_hdr.pc
- - libssock.pc
- - ros_state.pc
- - ros_traj.pc
- - rstate_cfg.pc
- - rtraj_cfg.pc
- - ros.tp (or the .ls version)
- - ros_movesm.tp (or the .ls version)
+ - `libindlog.pc`
+ - `libmathex.pc`
+ - `librosfanuc.pc`
+ - `libsm000a.pc`
+ - `libsm000b.pc`
+ - `libsm000d.pc`
+ - `libsm_hdr.pc`
+ - `libssock.pc`
+ - `ros_state.pc`
+ - `ros_traj.pc`
+ - `rstate_cfg.pc`
+ - `rtraj_cfg.pc`
+ - `ros.tp` (or the `.ls` version)
+ - `ros_movesm.tp` (or the `.ls` version)
 
 If this is a fresh install, run the `RSTATE_CFG` and the `RTRAJ_CFG` programs **once**.
 
